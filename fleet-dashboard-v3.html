@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TankerTrack — Ops Console</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700&display=swap');
+
+  :root{
+    --bg: #0C1310;
+    --cream: #EFE9DC;
+    --text-dim: #9BAAA2;
+    --text-faint: #5C6E66;
+    --amber: #F0A93E;
+    --green: #5FD37B;
+    --red: #E2472B;
+    --glass: rgba(20,28,24,.72);
+    --glass-2: rgba(29,40,35,.8);
+    --stroke: rgba(240,233,220,.1);
+    --f-display: 'Bebas Neue', sans-serif;
+    --f-body: 'Inter', sans-serif;
+    --f-mono: 'Space Mono', monospace;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{ background:var(--bg); color:var(--cream); font-family:var(--f-body); padding:24px;}
+
+  .tabbar{ display:flex; gap:4px; margin-bottom:16px; }
+  .tab{ font-family:var(--f-display); letter-spacing:.06em; font-size:15px; color:var(--text-faint);
+    padding:9px 20px; cursor:pointer; border:1px solid var(--stroke); border-bottom:none; border-radius:6px 6px 0 0; background:#0F1613;}
+  .tab.active{ color:var(--amber); background:#161F1B; border-color:rgba(240,233,220,.16); }
+  .view{ display:none; } .view.active{ display:block; }
+
+  /* ============ MANAGER: MAP-FIRST OPS CONSOLE ============ */
+  .console{
+    position:relative; height:900px; border-radius:14px; overflow:hidden;
+    border:1px solid rgba(240,233,220,.12);
+    background:
+      radial-gradient(circle at 30% 20%, rgba(240,169,62,.06), transparent 40%),
+      radial-gradient(circle at 75% 70%, rgba(95,211,123,.05), transparent 45%),
+      #0E1512;
+  }
+  .console-roads{ position:absolute; inset:0; opacity:.5; }
+  .console-grid{ position:absolute; inset:0; background-image:
+    linear-gradient(rgba(240,233,220,.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(240,233,220,.025) 1px, transparent 1px);
+    background-size:44px 44px; }
+
+  /* floating truck pins directly on map */
+  .truck-pin{ position:absolute; width:12px; height:12px; border-radius:50%; border:2px solid var(--bg); z-index:5; cursor:pointer;}
+  .truck-pin.moving{ background:var(--green); box-shadow:0 0 0 5px rgba(95,211,123,.15);}
+  .truck-pin.idle{ background:var(--amber); box-shadow:0 0 0 5px rgba(240,169,62,.15);}
+  .truck-pin.stopped{ background:var(--red); box-shadow:0 0 0 5px rgba(226,71,43,.18);}
+  .pin-label{ position:absolute; font-family:var(--f-mono); font-size:10px; color:var(--text-dim);
+    background:rgba(10,16,13,.92); padding:3px 7px; border-radius:4px; white-space:nowrap; transform:translate(10px,-6px);
+    border:1px solid rgba(240,233,220,.1); z-index:5;}
+
+  /* top brand + ticker bar, floating over map */
+  .hud-top{ position:absolute; top:16px; left:16px; right:16px; display:flex; gap:12px; align-items:center; z-index:10; flex-wrap:wrap;}
+  .hud-brand{ background:var(--glass); backdrop-filter:blur(14px); border:1px solid var(--stroke); border-radius:10px;
+    padding:10px 16px; display:flex; align-items:center; gap:10px; flex-shrink:0;}
+  .hud-brand .mark{ width:32px; height:32px; border-radius:6px; background:rgba(240,169,62,.14); border:1px solid rgba(240,169,62,.3);
+    display:flex; align-items:center; justify-content:center; font-family:var(--f-display); color:var(--amber); font-size:14px;}
+  .hud-brand h1{ font-family:var(--f-display); font-size:18px; letter-spacing:.03em; line-height:1;}
+  .hud-brand p{ font-size:9px; color:var(--text-faint); letter-spacing:.1em; text-transform:uppercase; margin-top:3px; font-family:var(--f-mono);}
+
+  .ticker{ flex:1; background:var(--glass); backdrop-filter:blur(14px); border:1px solid var(--stroke); border-radius:10px;
+    display:flex; align-items:center; gap:0; overflow-x:auto; padding:0 4px;}
+  .tick{ padding:12px 18px; border-right:1px solid var(--stroke); white-space:nowrap; flex-shrink:0;}
+  .tick:last-child{ border-right:none;}
+  .tick .k{ font-size:9px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.08em; font-family:var(--f-mono);}
+  .tick .v{ font-family:var(--f-mono); font-weight:700; font-size:16px; margin-top:3px;}
+  .tick .v.a{ color:var(--amber);} .tick .v.g{ color:var(--green);} .tick .v.r{ color:var(--red);}
+
+  /* left floating roster panel */
+  .hud-roster{ position:absolute; top:78px; left:16px; bottom:16px; width:250px; z-index:9;
+    background:var(--glass); backdrop-filter:blur(14px); border:1px solid var(--stroke); border-radius:10px;
+    display:flex; flex-direction:column; overflow:hidden;}
+  .roster-head{ padding:12px 14px; border-bottom:1px solid var(--stroke); font-family:var(--f-display); font-size:14px; letter-spacing:.03em; display:flex; justify-content:space-between; align-items:center;}
+  .roster-head span{ font-family:var(--f-mono); font-size:10px; color:var(--text-faint); font-weight:400;}
+  .roster-list{ overflow-y:auto; flex:1; }
+  .roster-item{ padding:10px 14px; border-bottom:1px solid rgba(240,233,220,.05); display:flex; gap:9px; align-items:flex-start; cursor:pointer;}
+  .roster-item:hover{ background:rgba(240,169,62,.05);}
+  .roster-item.active-sel{ background:rgba(240,169,62,.08); border-left:2px solid var(--amber);}
+  .r-dot{ width:8px; height:8px; border-radius:50%; margin-top:4px; flex-shrink:0;}
+  .r-body{ flex:1; min-width:0;}
+  .r-body .veh{ font-family:var(--f-mono); font-size:12px; font-weight:700;}
+  .r-body .route{ font-size:10.5px; color:var(--text-dim); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .r-body .meta{ font-size:9.5px; color:var(--text-faint); margin-top:2px; font-family:var(--f-mono);}
+
+  /* right floating detail / alerts panel */
+  .hud-detail{ position:absolute; top:78px; right:16px; bottom:16px; width:280px; z-index:9;
+    background:var(--glass); backdrop-filter:blur(14px); border:1px solid var(--stroke); border-radius:10px;
+    display:flex; flex-direction:column; overflow:hidden;}
+  .detail-head{ padding:14px; border-bottom:1px solid var(--stroke);}
+  .detail-head .veh{ font-family:var(--f-display); font-size:20px; letter-spacing:.03em; color:var(--amber);}
+  .detail-head .sub{ font-size:10.5px; color:var(--text-dim); font-family:var(--f-mono); margin-top:3px;}
+  .detail-stats{ display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:14px; border-bottom:1px solid var(--stroke);}
+  .d-stat{ background:var(--glass-2); border:1px solid var(--stroke); border-radius:7px; padding:8px 10px;}
+  .d-stat .k{ font-size:8.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.06em; font-family:var(--f-mono);}
+  .d-stat .v{ font-family:var(--f-mono); font-weight:700; font-size:14px; margin-top:3px;}
+  .detail-feed{ flex:1; overflow-y:auto; padding:14px;}
+  .feed-title{ font-size:9.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.08em; font-family:var(--f-mono); margin-bottom:10px;}
+  .feed-item{ display:flex; gap:8px; margin-bottom:12px; font-size:11.5px;}
+  .feed-item .fdot{ width:6px; height:6px; border-radius:50%; margin-top:5px; flex-shrink:0;}
+  .feed-item b{ display:block; color:var(--cream); font-size:11.5px; font-weight:600;}
+  .feed-item span{ color:var(--text-faint); font-family:var(--f-mono); font-size:10px;}
+
+  /* bottom manifest drawer, peeking up from bottom */
+  .drawer{ position:absolute; left:282px; right:312px; bottom:0; z-index:8;
+    background:var(--glass); backdrop-filter:blur(14px); border:1px solid var(--stroke); border-radius:10px 10px 0 0;
+    max-height:230px; display:flex; flex-direction:column;}
+  .drawer-handle{ padding:10px 16px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--stroke); cursor:pointer;}
+  .drawer-handle .bar{ width:36px; height:3px; background:var(--text-faint); border-radius:2px; margin:0 auto;}
+  .drawer-title{ font-family:var(--f-display); font-size:14px; letter-spacing:.03em;}
+  .drawer-title span{ font-family:var(--f-mono); font-size:10px; color:var(--text-faint); font-weight:400; margin-left:8px;}
+  .drawer-body{ overflow-y:auto; padding:0 6px; }
+  table{ width:100%; border-collapse:collapse; font-size:11.5px;}
+  th{ text-align:left; color:var(--text-faint); font-weight:600; text-transform:uppercase; font-size:9px; letter-spacing:.06em; padding:8px 10px; font-family:var(--f-mono); position:sticky; top:0; background:var(--glass-2);}
+  td{ padding:9px 10px; border-top:1px solid rgba(240,233,220,.05); color:var(--text-dim);}
+  td.strong{ color:var(--cream); font-weight:700; font-family:var(--f-mono);}
+  .status-pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:3px; font-size:9.5px; font-weight:700; font-family:var(--f-mono); text-transform:uppercase;}
+  .pill-moving{ background:rgba(95,211,123,.1); color:var(--green); border:1px solid rgba(95,211,123,.3);}
+  .pill-idle{ background:rgba(240,169,62,.1); color:var(--amber); border:1px solid rgba(240,169,62,.3);}
+  .pill-stopped{ background:rgba(226,71,43,.1); color:var(--red); border:1px solid rgba(226,71,43,.3);}
+
+  /* ============ DRIVER APP — persistent map + bottom sheet ============ */
+  .phones{ display:flex; gap:26px; flex-wrap:wrap; align-items:flex-start; }
+  .phone{ width:300px; background:#0A100D; border:1px solid rgba(240,233,220,.12); border-radius:32px; padding:12px; box-shadow:0 24px 60px rgba(0,0,0,.55);}
+  .phone-screen{ background:var(--bg); border-radius:20px; overflow:hidden; height:580px; position:relative;}
+  .phone-notch{ position:absolute; top:8px; left:50%; transform:translateX(-50%); width:56px; height:5px; background:#233029; border-radius:3px; z-index:20;}
+
+  .driver-map{ position:absolute; inset:0; background:
+    radial-gradient(circle at 30% 25%, rgba(240,169,62,.07), transparent 40%),
+    radial-gradient(circle at 70% 60%, rgba(95,211,123,.06), transparent 45%), #0E1512;}
+  .driver-map .grid{ position:absolute; inset:0; background-image:
+    linear-gradient(rgba(240,233,220,.02) 1px, transparent 1px), linear-gradient(90deg, rgba(240,233,220,.02) 1px, transparent 1px);
+    background-size:34px 34px;}
+  .driver-pin{ position:absolute; width:13px; height:13px; border-radius:50%; background:var(--green); border:2px solid var(--bg); box-shadow:0 0 0 5px rgba(95,211,123,.18); z-index:3;}
+
+  .screen-tag{ position:absolute; top:22px; left:0; right:0; text-align:center; font-family:var(--f-mono); font-size:9px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.1em; z-index:10;}
+
+  .sheet{ position:absolute; left:0; right:0; bottom:0; background:var(--glass); backdrop-filter:blur(16px);
+    border-top:1px solid var(--stroke); border-radius:18px 18px 0 0; z-index:15; display:flex; flex-direction:column;}
+  .sheet-grip{ width:34px; height:4px; background:rgba(240,233,220,.25); border-radius:3px; margin:10px auto 4px;}
+  .sheet-pad{ padding:12px 16px 16px; overflow-y:auto; }
+
+  .sheet.tall{ top:110px; }
+  .sheet.peek{ height:190px; }
+
+  .ticket-head{ text-align:center; padding-bottom:10px; border-bottom:1px dashed rgba(240,233,220,.15); margin-bottom:10px;}
+  .ticket-head h3{ font-family:var(--f-display); font-size:17px; letter-spacing:.03em; color:var(--amber);}
+  .ticket-head p{ font-size:9.5px; color:var(--text-faint); font-family:var(--f-mono); margin-top:2px;}
+
+  .field{ margin-bottom:9px; }
+  .field label{ font-size:9px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.07em; display:block; margin-bottom:4px; font-family:var(--f-mono);}
+  .field .input{ background:var(--glass-2); border:1px solid var(--stroke); border-radius:7px; padding:9px 11px; font-size:12px; color:var(--cream); font-family:var(--f-mono); display:flex; justify-content:space-between; align-items:center;}
+  .field .input span.ph{ color:var(--text-faint); font-family:var(--f-body); }
+  .row2{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+
+  .btn-primary{ background:var(--amber); color:#1A1305; text-align:center; padding:12px; border-radius:8px; font-weight:700; font-size:12px; margin-top:8px; letter-spacing:.03em; text-transform:uppercase; font-family:var(--f-mono);}
+
+  .peek-row{ display:flex; align-items:center; justify-content:space-between; padding:0 2px;}
+  .peek-status{ display:flex; align-items:center; gap:8px;}
+  .peek-status .pulse{ width:8px; height:8px; border-radius:50%; background:var(--green); box-shadow:0 0 0 4px rgba(95,211,123,.2);}
+  .peek-status b{ font-family:var(--f-display); font-size:15px; letter-spacing:.02em; color:var(--green);}
+  .peek-stats{ display:flex; gap:8px; margin-top:12px;}
+  .peek-stats div{ flex:1; background:var(--glass-2); border:1px solid var(--stroke); border-radius:7px; padding:8px; text-align:center;}
+  .peek-stats .v{ font-family:var(--f-mono); font-weight:700; font-size:13px; color:var(--amber);}
+  .peek-stats .k{ font-size:8px; color:var(--text-faint); text-transform:uppercase; margin-top:2px; font-family:var(--f-mono);}
+  .log-btn{ margin-top:10px; background:var(--amber); color:#1A1305; text-align:center; padding:12px; border-radius:8px; font-weight:700; font-size:12px; letter-spacing:.03em; text-transform:uppercase; font-family:var(--f-mono);}
+
+  .scrim{ position:absolute; inset:0; background:rgba(0,0,0,.35); z-index:12;}
+</style>
+</head>
+<body>
+
+  <div class="tabbar">
+    <div class="tab active" onclick="sw(0)">Fleet Command · Manager</div>
+    <div class="tab" onclick="sw(1)">Driver App · Field</div>
+  </div>
+
+  <!-- ================= MANAGER: MAP-FIRST OPS CONSOLE ================= -->
+  <div class="view active" id="v0">
+    <div class="console">
+      <div class="console-grid"></div>
+      <svg class="console-roads" width="100%" height="100%">
+        <path d="M 300 900 Q 400 700 460 550 T 700 320 T 1000 120" stroke="#26362E" stroke-width="3" fill="none"/>
+        <path d="M 320 60 Q 500 200 600 400 T 900 700 Q 980 780 1120 850" stroke="#26362E" stroke-width="3" fill="none"/>
+        <path d="M 700 40 Q 650 300 800 500 T 950 850" stroke="#1D2822" stroke-width="2" fill="none" stroke-dasharray="3 6"/>
+      </svg>
+
+      <!-- top HUD -->
+      <div class="hud-top">
+        <div class="hud-brand">
+          <div class="mark">TT</div>
+          <div><h1>TankerTrack</h1><p>Ops Console · Live</p></div>
+        </div>
+        <div class="ticker">
+          <div class="tick"><div class="k">Trips Active</div><div class="v">9</div></div>
+          <div class="tick"><div class="k">Ethanol Dispatched</div><div class="v a">186.4 KL</div></div>
+          <div class="tick"><div class="k">Distance Today</div><div class="v">2,340 km</div></div>
+          <div class="tick"><div class="k">On-Time Rate</div><div class="v g">94.1%</div></div>
+          <div class="tick"><div class="k">Active Alerts</div><div class="v r">3</div></div>
+          <div class="tick"><div class="k">Drivers On Duty</div><div class="v">12 / 15</div></div>
+          <div class="tick"><div class="k">Depot</div><div class="v" style="font-size:12px;">All (2)</div></div>
+        </div>
+      </div>
+
+      <!-- left roster -->
+      <div class="hud-roster">
+        <div class="roster-head">Fleet Roster <span>15 vehicles</span></div>
+        <div class="roster-list">
+          <div class="roster-item active-sel">
+            <div class="r-dot" style="background:var(--green)"></div>
+            <div class="r-body"><div class="veh">KA-05-AB-4471</div><div class="route">Belagavi → Hubballi</div><div class="meta">62 km/h · 18.2 KL</div></div>
+          </div>
+          <div class="roster-item">
+            <div class="r-dot" style="background:var(--green)"></div>
+            <div class="r-body"><div class="veh">KA-01-CT-9012</div><div class="route">Mysuru → Mangaluru</div><div class="meta">54 km/h · 16.8 KL</div></div>
+          </div>
+          <div class="roster-item">
+            <div class="r-dot" style="background:var(--amber)"></div>
+            <div class="r-body"><div class="veh">KA-03-EF-2210</div><div class="route">Bangalore → Tumakuru</div><div class="meta">idle 14m · 14.5 KL</div></div>
+          </div>
+          <div class="roster-item">
+            <div class="r-dot" style="background:var(--red)"></div>
+            <div class="r-body"><div class="veh">KA-09-GH-6634</div><div class="route">Davanagere → Shivamogga</div><div class="meta">geo-fence exit</div></div>
+          </div>
+          <div class="roster-item">
+            <div class="r-dot" style="background:var(--green)"></div>
+            <div class="r-body"><div class="veh">KA-02-MN-1187</div><div class="route">Ballari → Raichur</div><div class="meta">71 km/h · 17.6 KL</div></div>
+          </div>
+          <div class="roster-item">
+            <div class="r-dot" style="background:var(--text-faint)"></div>
+            <div class="r-body"><div class="veh">KA-07-XY-3345</div><div class="route">Maintenance — depot</div><div class="meta">unassigned</div></div>
+          </div>
+          <div class="roster-item">
+            <div class="r-dot" style="background:var(--green)"></div>
+            <div class="r-body"><div class="veh">KA-04-JK-7729</div><div class="route">Hubballi → Belagavi</div><div class="meta">48 km/h · 15.4 KL</div></div>
+          </div>
+          <div class="roster-item">
+            <div class="r-dot" style="background:var(--green)"></div>
+            <div class="r-body"><div class="veh">KA-08-PQ-5561</div><div class="route">Tumakuru → Bangalore</div><div class="meta">66 km/h · 12.9 KL</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- right detail / alerts -->
+      <div class="hud-detail">
+        <div class="detail-head">
+          <div class="veh">KA-05-AB-4471</div>
+          <div class="sub">R. Naik · Belagavi → Hubballi</div>
+        </div>
+        <div class="detail-stats">
+          <div class="d-stat"><div class="k">Speed</div><div class="v">62 km/h</div></div>
+          <div class="d-stat"><div class="k">ETA</div><div class="v">13:20</div></div>
+          <div class="d-stat"><div class="k">Load</div><div class="v">18.2 KL</div></div>
+          <div class="d-stat"><div class="k">Last Stop</div><div class="v" style="font-size:11px;">Dharwad, 11:42</div></div>
+        </div>
+        <div class="detail-feed">
+          <div class="feed-title">Live Event Feed</div>
+          <div class="feed-item"><div class="fdot" style="background:var(--red)"></div><div><b>Geo-fence exit</b><span>KA-09-GH-6634 · 12:31</span></div></div>
+          <div class="feed-item"><div class="fdot" style="background:var(--amber)"></div><div><b>Idle 14 min at depot gate</b><span>KA-03-EF-2210 · 12:20</span></div></div>
+          <div class="feed-item"><div class="fdot" style="background:var(--green)"></div><div><b>Stop logged — weighbridge</b><span>KA-05-AB-4471 · 11:42</span></div></div>
+          <div class="feed-item"><div class="fdot" style="background:var(--green)"></div><div><b>Trip started</b><span>KA-08-PQ-5561 · 10:15</span></div></div>
+          <div class="feed-item"><div class="fdot" style="background:var(--text-faint)"></div><div><b>Maintenance flagged</b><span>KA-07-XY-3345 · 09:40</span></div></div>
+        </div>
+      </div>
+
+      <!-- bottom manifest drawer -->
+      <div class="drawer">
+        <div class="drawer-handle"><div class="bar"></div></div>
+        <div class="drawer-title" style="padding:0 16px 8px;">Fleet Manifest <span>trip sheets · pull up for full list</span></div>
+        <div class="drawer-body">
+          <table>
+            <thead><tr><th>Vehicle</th><th>Driver</th><th>Goods</th><th>Status</th><th>Location</th><th>ETA</th></tr></thead>
+            <tbody>
+              <tr><td class="strong">KA-05-AB-4471</td><td>R. Naik</td><td>18.2 KL</td><td><span class="status-pill pill-moving">Transit</span></td><td>NH-4, Km 212</td><td>13:20</td></tr>
+              <tr><td class="strong">KA-01-CT-9012</td><td>M. Iqbal</td><td>16.8 KL</td><td><span class="status-pill pill-moving">Transit</span></td><td>NH-275, Km 88</td><td>15:10</td></tr>
+              <tr><td class="strong">KA-03-EF-2210</td><td>S. Reddy</td><td>14.5 KL</td><td><span class="status-pill pill-idle">Idle</span></td><td>Nelamangala gate</td><td>14:00</td></tr>
+              <tr><td class="strong">KA-09-GH-6634</td><td>P. Kumar</td><td>19.0 KL</td><td><span class="status-pill pill-stopped">Alert</span></td><td>Off-route, Honnali</td><td>—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= DRIVER APP: persistent map + bottom sheet ================= -->
+  <div class="view" id="v1">
+    <div class="phones">
+
+      <!-- STATE A: PRE-TRIP SHEET (tall, form) -->
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="phone-notch"></div>
+          <div class="driver-map"><div class="grid"></div></div>
+          <div class="screen-tag">State 1 · Before starting</div>
+          <div class="sheet tall">
+            <div class="sheet-grip"></div>
+            <div class="sheet-pad">
+              <div class="ticket-head"><h3>New Trip Sheet</h3><p>TS-2026-07-21-0091</p></div>
+              <div class="field"><label>Vehicle No.</label><div class="input">KA-05-AB-4471 <span class="ph">▾</span></div></div>
+              <div class="row2">
+                <div class="field"><label>Start Odometer</label><div class="input">142,880 <span class="ph">km</span></div></div>
+                <div class="field"><label>Fuel Level</label><div class="input">Full <span class="ph">▾</span></div></div>
+              </div>
+              <div class="field"><label>Route → Destination</label><div class="input">Belagavi → Hubballi <span class="ph">▾</span></div></div>
+              <div class="row2">
+                <div class="field"><label>Ethanol Qty</label><div class="input">18.2 <span class="ph">KL</span></div></div>
+                <div class="field"><label>Gross Weight</label><div class="input">14,360 <span class="ph">kg</span></div></div>
+              </div>
+              <div class="field"><label>Loading Slip Photo</label><div class="input" style="justify-content:center; color:var(--text-faint);">📷 Capture</div></div>
+              <div class="btn-primary">Start Trip &amp; Begin GPS Tracking</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STATE B: ACTIVE TRIP (sheet collapsed to peek, map dominant) -->
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="phone-notch"></div>
+          <div class="driver-map"><div class="grid"></div>
+            <div class="driver-pin" style="top:42%;left:52%;"></div>
+            <svg width="100%" height="100%" style="position:absolute;inset:0;"><path d="M 40 460 Q 120 380 160 300 T 260 160" stroke="#26362E" stroke-width="2" fill="none"/></svg>
+          </div>
+          <div class="screen-tag">State 2 · While driving</div>
+          <div class="sheet peek">
+            <div class="sheet-grip"></div>
+            <div class="sheet-pad">
+              <div class="peek-row">
+                <div class="peek-status"><div class="pulse"></div><b>In Transit</b></div>
+                <div style="font-family:var(--f-mono);font-size:10px;color:var(--text-faint);">TS-0091</div>
+              </div>
+              <div class="peek-stats">
+                <div><div class="v">86 km</div><div class="k">Covered</div></div>
+                <div><div class="v">54 km/h</div><div class="k">Speed</div></div>
+                <div><div class="v">1h 42m</div><div class="k">Elapsed</div></div>
+              </div>
+              <div class="log-btn">＋ Log a Stop</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STATE C: LOG STOP (sheet rises over map with scrim) -->
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="phone-notch"></div>
+          <div class="driver-map"><div class="grid"></div><div class="driver-pin" style="top:42%;left:52%;"></div></div>
+          <div class="screen-tag">State 3 · Logging a stop</div>
+          <div class="scrim"></div>
+          <div class="sheet tall" style="z-index:16; top:170px;">
+            <div class="sheet-grip"></div>
+            <div class="sheet-pad">
+              <div class="ticket-head"><h3>Log Stop</h3><p>Auto-tagged GPS · 12:31, NH-4</p></div>
+              <div class="field"><label>Stop Reason</label><div class="input">Weighbridge Check <span class="ph">▾</span></div></div>
+              <div class="field"><label>Odometer at Stop</label><div class="input">142,966 <span class="ph">km</span></div></div>
+              <div class="field"><label>Photo Evidence</label><div class="input" style="justify-content:center; color:var(--text-faint);">📷 Capture</div></div>
+              <div class="btn-primary">Save Stop</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+function sw(i){
+  document.querySelectorAll('.tab').forEach((t,idx)=>t.classList.toggle('active', idx===i));
+  document.querySelectorAll('.view').forEach((v,idx)=>v.classList.toggle('active', idx===i));
+}
+</script>
+</body>
+</html>

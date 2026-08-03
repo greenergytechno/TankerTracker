@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Secrets. .env.example is the tracked template.
+.env
+.env.*
+!.env.example
+
+*.log
+coverage/
+.DS_Store

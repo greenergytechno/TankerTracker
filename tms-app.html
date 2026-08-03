@@ -1,0 +1,1807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TankerTrack — TMS Workflow Prototype</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700&display=swap');
+
+  :root{
+    --bg:#0C1310; --panel:#111A16; --panel-2:#16211C;
+    --cream:#EFE9DC; --dim:#9BAAA2; --faint:#5C6E66;
+    --amber:#F0A93E; --green:#5FD37B; --red:#E2472B;
+    --stroke:rgba(240,233,220,.1); --stroke-2:rgba(240,233,220,.18);
+    --f-display:'Bebas Neue',sans-serif; --f-body:'Inter',sans-serif; --f-mono:'Space Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--cream);font-family:var(--f-body);padding:20px;line-height:1.45;}
+
+  header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px;}
+  .mark{width:38px;height:38px;border-radius:8px;background:rgba(240,169,62,.14);border:1px solid rgba(240,169,62,.3);
+    display:flex;align-items:center;justify-content:center;font-family:var(--f-display);color:var(--amber);font-size:16px;}
+  header h1{font-family:var(--f-display);font-size:22px;letter-spacing:.03em;line-height:1;}
+  header p{font-size:9px;color:var(--faint);letter-spacing:.1em;text-transform:uppercase;font-family:var(--f-mono);margin-top:3px;}
+  .memnote{margin-left:auto;font-family:var(--f-mono);font-size:10px;color:var(--faint);border:1px dashed var(--stroke-2);
+    padding:6px 10px;border-radius:6px;}
+
+  .tabbar{display:flex;gap:4px;margin-bottom:16px;}
+  .tab{font-family:var(--f-display);letter-spacing:.06em;font-size:15px;color:var(--faint);padding:9px 22px;cursor:pointer;
+    border:1px solid var(--stroke);border-radius:6px;background:#0F1613;
+    width:auto;margin-top:0;font-weight:400;text-transform:none;}
+  .tab.active{color:var(--amber);background:#161F1B;border-color:var(--stroke-2);}
+  .tab:focus-visible{outline:2px solid var(--amber);outline-offset:2px;}
+  .tab-link{text-decoration:none;margin-left:auto;color:var(--dim);display:inline-flex;align-items:center;}
+  .tab-link:hover{color:var(--amber);border-color:var(--stroke-2);}
+  .view{display:none;} .view.active{display:block;}
+
+  .cols{display:grid;grid-template-columns:minmax(340px,1fr) minmax(420px,1.4fr);gap:16px;align-items:start;}
+  @media (max-width:900px){ .cols{grid-template-columns:1fr;} }
+
+  .card{background:var(--panel);border:1px solid var(--stroke);border-radius:12px;overflow:hidden;margin-bottom:16px;}
+  .card-head{padding:13px 16px;border-bottom:1px solid var(--stroke);display:flex;justify-content:space-between;align-items:center;gap:10px;}
+  .card-head h2{font-family:var(--f-display);font-size:16px;letter-spacing:.04em;}
+  .card-head .hint{font-family:var(--f-mono);font-size:10px;color:var(--faint);}
+  .card-body{padding:16px;}
+
+  label{font-size:9px;color:var(--faint);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:5px;font-family:var(--f-mono);}
+  input,select{width:100%;background:var(--panel-2);border:1px solid var(--stroke);border-radius:7px;padding:10px 11px;
+    font-size:13px;color:var(--cream);font-family:var(--f-mono);outline:none;}
+  input:focus,select:focus{border-color:rgba(240,169,62,.5);}
+  select{cursor:pointer;} option{background:#16211C;}
+  .field{margin-bottom:12px;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+
+  button{width:100%;background:var(--amber);color:#1A1305;border:none;padding:12px;border-radius:8px;font-weight:700;font-size:12px;
+    letter-spacing:.04em;text-transform:uppercase;font-family:var(--f-mono);cursor:pointer;margin-top:4px;}
+  button:hover{filter:brightness(1.08);}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--stroke-2);}
+  button.danger{background:var(--red);color:#fff;}
+  button.slim{width:auto;padding:7px 14px;font-size:10px;margin:0;}
+
+  .err{background:rgba(226,71,43,.1);border:1px solid rgba(226,71,43,.35);color:#F5A492;border-radius:7px;padding:10px 12px;
+    font-size:12px;margin-bottom:12px;font-family:var(--f-mono);}
+  .ok{background:rgba(95,211,123,.09);border:1px solid rgba(95,211,123,.3);border-radius:9px;padding:14px;margin-bottom:14px;text-align:center;}
+  .ok .k{font-size:9px;color:var(--faint);text-transform:uppercase;letter-spacing:.09em;font-family:var(--f-mono);}
+  .ok .v{font-family:var(--f-display);font-size:34px;letter-spacing:.05em;color:var(--green);margin-top:2px;}
+  .ok .sub{font-size:11px;color:var(--dim);margin-top:4px;}
+
+  table{width:100%;border-collapse:collapse;font-size:12px;}
+  th{text-align:left;color:var(--faint);font-weight:600;text-transform:uppercase;font-size:9px;letter-spacing:.06em;
+    padding:9px 10px;font-family:var(--f-mono);border-bottom:1px solid var(--stroke);}
+  td{padding:9px 10px;border-top:1px solid rgba(240,233,220,.05);color:var(--dim);vertical-align:top;}
+  td.strong{color:var(--cream);font-weight:700;font-family:var(--f-mono);}
+  tr.clickable{cursor:pointer;} tr.clickable:hover td{background:rgba(240,169,62,.05);}
+
+  .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:3px;font-size:9.5px;font-weight:700;
+    font-family:var(--f-mono);text-transform:uppercase;white-space:nowrap;}
+  .p-green{background:rgba(95,211,123,.1);color:var(--green);border:1px solid rgba(95,211,123,.3);}
+  .p-amber{background:rgba(240,169,62,.1);color:var(--amber);border:1px solid rgba(240,169,62,.3);}
+  .p-red{background:rgba(226,71,43,.1);color:var(--red);border:1px solid rgba(226,71,43,.3);}
+  .p-grey{background:rgba(240,233,220,.06);color:var(--faint);border:1px solid var(--stroke);}
+
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:9px;margin-bottom:14px;}
+  .stat{background:var(--panel-2);border:1px solid var(--stroke);border-radius:8px;padding:10px 12px;}
+  .stat .k{font-size:8.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;font-family:var(--f-mono);}
+  .stat .v{font-family:var(--f-mono);font-weight:700;font-size:15px;margin-top:3px;}
+  .stat .v.a{color:var(--amber);} .stat .v.g{color:var(--green);} .stat .v.r{color:var(--red);}
+
+  .empty{color:var(--faint);font-size:12px;text-align:center;padding:26px 10px;font-family:var(--f-mono);}
+  .divider{height:1px;background:var(--stroke);margin:14px 0;}
+  .note{font-size:11px;color:var(--faint);margin-top:8px;line-height:1.5;}
+  .flagline{font-size:11.5px;color:var(--dim);padding:7px 0;border-top:1px solid rgba(240,233,220,.05);}
+  .flagline b{color:var(--red);}
+
+  .filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px;}
+  .filein{padding:8px 10px;font-size:11px;font-family:var(--f-body);cursor:pointer;}
+  .filein::file-selector-button{background:var(--panel-2);color:var(--dim);border:1px solid var(--stroke-2);border-radius:5px;
+    padding:5px 10px;margin-right:10px;font-family:var(--f-mono);font-size:10px;text-transform:uppercase;cursor:pointer;}
+
+  .barrow{margin-bottom:11px;}
+  .barrow[data-vfilter]{cursor:pointer;}
+  .barrow[data-vfilter]:hover .barlab span{color:var(--amber);}
+  .barlab{display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:var(--dim);margin-bottom:4px;}
+  .barlab b{font-family:var(--f-mono);color:var(--cream);white-space:nowrap;}
+  .bartrack{height:6px;background:var(--panel-2);border-radius:3px;overflow:hidden;}
+  .barfill{height:100%;background:var(--amber);border-radius:3px;}
+  .barfill.g{background:var(--green);}
+
+  td.money{font-family:var(--f-mono);color:var(--cream);text-align:right;white-space:nowrap;}
+  th.money{text-align:right;}
+  a.billlink{color:var(--amber);text-decoration:none;border-bottom:1px dotted rgba(240,169,62,.5);}
+  .req{color:var(--amber);}
+  .filein.missing{border-color:rgba(226,71,43,.55);}
+
+  .section-band{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+    margin:30px 0 14px;padding-bottom:10px;border-bottom:1px solid var(--stroke-2);}
+  .section-band h2{font-family:var(--f-display);font-size:20px;letter-spacing:.05em;color:var(--amber);}
+  .section-band span{font-family:var(--f-mono);font-size:10px;color:var(--faint);
+    text-transform:uppercase;letter-spacing:.08em;}
+  .delta{font-family:var(--f-mono);font-size:9.5px;padding:2px 6px;border-radius:3px;white-space:nowrap;}
+  .delta.good{background:rgba(95,211,123,.1);color:var(--green);}
+  .delta.bad{background:rgba(226,71,43,.1);color:var(--red);}
+
+  .tripsheet{border:1px solid var(--stroke-2);border-radius:8px;padding:14px;background:var(--panel-2);}
+  .ts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;}
+  .ts-grid > div{display:flex;flex-direction:column;gap:2px;}
+  .ts-k{font-family:var(--f-mono);font-size:9.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;}
+  .ts-v{font-size:12.5px;color:var(--cream);}
+  .ts-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .ts-head{font-family:var(--f-display);font-size:14px;color:var(--amber);letter-spacing:.04em;margin-bottom:6px;}
+  .tripsheet table{width:100%;}
+  .tripsheet td{padding:5px 0;font-size:12px;border-top:1px solid rgba(240,233,220,.05);}
+  .ts-total td{font-weight:700;color:var(--cream);border-top:1px solid var(--stroke-2);}
+  .ts-signs{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px;}
+  .ts-sign{text-align:center;}
+  .ts-sign-line{height:34px;border-bottom:1px solid var(--stroke-2);margin-bottom:5px;}
+  .ts-sign span{font-family:var(--f-mono);font-size:9.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;}
+  @media(max-width:640px){ .ts-cols{grid-template-columns:1fr;} }
+
+  .modal-wrap{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:none;align-items:flex-start;justify-content:center;
+    padding:36px 16px;overflow-y:auto;}
+  .modal-wrap.open{display:flex;}
+  .modal{background:var(--panel);border:1px solid var(--stroke-2);border-radius:12px;width:100%;max-width:760px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="mark">TT</div>
+  <div>
+    <h1>TankerTrack</h1>
+    <p>Ethanol Fleet TMS · Workflow Prototype</p>
+  </div>
+  <div class="memnote">Manager console · data shared with the driver app</div>
+</header>
+
+<div class="tabbar" role="tablist">
+  <button class="tab active" role="tab" data-view="0">Manager · Dispatch</button>
+  <button class="tab" role="tab" data-view="1">Manager · Workshop &amp; Costs</button>
+  <a class="tab tab-link" href="driver.html" target="_blank" rel="noopener">Driver App ↗</a>
+</div>
+
+<!-- ===================== MANAGER ===================== -->
+<div class="view active" id="v0">
+  <div class="cols">
+
+    <div>
+      <div class="card">
+        <div class="card-head"><h2>Trip Scheduler</h2><span class="hint">step 1</span></div>
+        <div class="card-body">
+          <div id="schedErr"></div>
+          <div class="field">
+            <label>Vehicle No.</label>
+            <select id="f-vehicle"></select>
+          </div>
+          <div class="field">
+            <label>Driver</label>
+            <select id="f-driver"></select>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Route — Origin</label><input id="f-from" placeholder="Belagavi"></div>
+            <div class="field"><label>Route — Destination</label><input id="f-to" placeholder="Hubballi"></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Max Stops Allowed</label><input id="f-maxstops" type="number" min="0" step="1" value="2"></div>
+            <div class="field"><label>Ethanol Load (KL)</label><input id="f-load" type="number" min="0" step="0.1" value="18.2"></div>
+          </div>
+          <div class="field"><label>Delivery Deadline</label><input id="f-deadline" type="datetime-local"></div>
+          <div class="field"><label>GPS Access Point</label><input id="f-gps" placeholder="Belagavi Depot — Gate 2"></div>
+          <div class="row2">
+            <div class="field"><label>Invoice / Dispatch No.</label><input id="f-invoice" placeholder="GBRETH0499/2627"></div>
+            <div class="field"><label>Driver Phone</label><input id="f-phone" placeholder="63632 49383"></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Advance Paid to Driver (₹)</label><input id="f-advance" type="number" min="0" step="1" value="5000"></div>
+            <div class="field"><label>Expected Return Date</label><input id="f-return" type="date"></div>
+          </div>
+          <button id="btn-schedule">Generate Trip Sheet</button>
+          <p class="note">The manager fixes these details at dispatch. The driver can only add trip expenses against them — they cannot change the vehicle, route, advance or invoice. Stops beyond the max-stops limit are auto-flagged unauthorized, as is anything the driver marks Unscheduled/Off-route.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Fleet Snapshot</h2><span class="hint">live</span></div>
+        <div class="card-body"><div class="stats" id="fleetStats"></div></div>
+      </div>
+    </div>
+
+    <div>
+      <div id="issued"></div>
+
+      <div class="card">
+        <div class="card-head"><h2>Live Trip Board</h2><span class="hint">all trips this session</span></div>
+        <div class="card-body" id="tripBoard"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Completed Trip Reports</h2><span class="hint">click a row to open</span></div>
+        <div class="card-body" id="reportList"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ===================== WORKSHOP & COSTS ===================== -->
+<div class="view" id="v1">
+  <div class="card">
+    <div class="card-head"><h2>Maintenance Spend</h2><span class="hint">whole fleet · this session</span></div>
+    <div class="card-body"><div class="stats" id="costStats"></div></div>
+  </div>
+
+  <div class="cols">
+    <div>
+      <div class="card">
+        <div class="card-head"><h2>Log Maintenance &amp; Bill</h2><span class="hint">workshop entry</span></div>
+        <div class="card-body">
+          <div id="maintErr"></div>
+          <div class="field"><label>Vehicle No.</label><select id="m-vehicle"></select></div>
+          <div class="field"><label>Maintenance Type</label><select id="m-type"></select></div>
+          <div class="field"><label>Work Description</label><input id="m-desc" placeholder="Replaced 4 × rear tyres"></div>
+          <div class="row2">
+            <div class="field"><label>Service Date</label><input id="m-date" type="date"></div>
+            <div class="field"><label>Odometer (km)</label><input id="m-odo" type="number" min="0" step="1" placeholder="142880"></div>
+          </div>
+          <div class="field"><label>Vendor / Garage</label><input id="m-vendor" placeholder="Sri Balaji Motors, Hubballi"></div>
+          <div class="row2">
+            <div class="field"><label>Invoice No.</label><input id="m-invoice" placeholder="SBM/26/1184"></div>
+            <div class="field"><label>Payment Status</label>
+              <select id="m-status"><option>Paid</option><option>Unpaid</option><option>Part-paid</option></select></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Amount before GST (₹)</label><input id="m-amount" type="number" min="0" step="1" placeholder="48000"></div>
+            <div class="field"><label>GST %</label><input id="m-gst" type="number" min="0" step="0.5" value="18"></div>
+          </div>
+          <div class="field"><label>Next Service Due (optional)</label><input id="m-next" type="date"></div>
+          <div class="field"><label>Bill / Invoice File <span class="req">— required</span></label>
+            <input id="m-bill" type="file" accept="image/*,application/pdf" class="filein">
+            <div id="billPick" class="note"></div></div>
+          <button id="btn-maint">Save Maintenance Record</button>
+          <p class="note">No bill, no record — a maintenance entry cannot be saved without the scanned invoice attached to it. Attached bills are held in browser memory for this session only; nothing is uploaded. In production these belong in object storage, linked to the immutable audit trail.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Spend by Type</h2><span class="hint">where the money goes</span></div>
+        <div class="card-body" id="byType"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Spend by Vehicle</h2><span class="hint">click to filter ledger</span></div>
+        <div class="card-body" id="byVehicle"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-head"><h2>Service Due</h2><span class="hint">next-due dates on file</span></div>
+        <div class="card-body" id="dueList"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Maintenance Ledger</h2><button class="ghost slim" id="btn-csv">Export CSV</button></div>
+        <div class="card-body">
+          <div class="filters">
+            <div><label>Vehicle</label><select id="fl-vehicle"></select></div>
+            <div><label>Type</label><select id="fl-type"></select></div>
+            <div><label>Payment</label><select id="fl-status">
+              <option>All</option><option>Paid</option><option>Unpaid</option><option>Part-paid</option></select></div>
+            <div><label>Search Vendor / Invoice</label><input id="fl-q" placeholder="MRF" autocomplete="off"></div>
+          </div>
+          <div id="ledger"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-band">
+    <h2>Fuel, Distance &amp; Mileage</h2>
+    <span>odometer log · refills · km per litre</span>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Running Costs</h2><span class="hint">fuel + workshop</span></div>
+    <div class="card-body"><div class="stats" id="fuelStats"></div></div>
+  </div>
+
+  <div class="cols">
+    <div>
+      <div class="card">
+        <div class="card-head"><h2>Log Odometer / Refill</h2><span class="hint">every few days</span></div>
+        <div class="card-body">
+          <div id="fuelErr"></div>
+          <div class="field"><label>Entry Type</label>
+            <select id="fu-kind">
+              <option value="reading">Odometer reading only</option>
+              <option value="refill">Fuel refill</option>
+            </select></div>
+          <div class="field"><label>Vehicle No.</label><select id="fu-vehicle"></select></div>
+          <div class="row2">
+            <div class="field"><label>Date</label><input id="fu-date" type="date"></div>
+            <div class="field"><label>Odometer (km)</label><input id="fu-odo" type="number" min="0" step="1" placeholder="142880"></div>
+          </div>
+          <div id="fuelOnly">
+            <div class="row2">
+              <div class="field"><label>Litres Filled</label><input id="fu-litres" type="number" min="0" step="0.01" placeholder="285.50"></div>
+              <div class="field"><label>Rate (₹ / litre)</label><input id="fu-rate" type="number" min="0" step="0.01" placeholder="92.40"></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label>Tank Filled To</label>
+                <select id="fu-full"><option value="yes">Full tank</option><option value="no">Part fill</option></select></div>
+              <div class="field"><label>Fuel Station</label><input id="fu-station" placeholder="IOC, Dharwad bypass"></div>
+            </div>
+            <div id="fuelTotal" class="note"></div>
+          </div>
+          <button id="btn-fuel">Save Entry</button>
+          <p class="note">Mileage is measured tank to tank: the litres put in between two full-tank fills, over the distance covered in that span. Part fills are carried forward into the next full fill rather than producing a false reading.</p>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-head"><h2>Mileage by Vehicle</h2><span class="hint">against fleet average</span></div>
+        <div class="card-body" id="mileageTable"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Fuel &amp; Odometer Log</h2>
+          <button class="ghost slim" id="btn-fuel-csv">Export CSV</button></div>
+        <div class="card-body">
+          <div class="filters">
+            <div><label>Vehicle</label><select id="fl-fuel-vehicle"></select></div>
+            <div><label>Entry Type</label><select id="fl-fuel-kind">
+              <option>All</option><option>Refill</option><option>Reading</option></select></div>
+          </div>
+          <div id="fuelLedger"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-wrap" id="modalWrap"><div class="modal" id="modalBody"></div></div>
+
+<script src="store.js"></script>
+<script>
+/* ---------------- seed data ----------------
+   Placeholder roster — replace with the real 15-vehicle and driver rosters
+   once the depot list is finalised. */
+const VEHICLES = [
+  'KA-05-AB-4471','KA-01-CT-9012','KA-03-EF-2210','KA-09-GH-6634','KA-02-MN-1187',
+  'KA-07-XY-3345','KA-04-JK-7729','KA-08-PQ-5561','KA-06-RS-8823','KA-10-TU-4409',
+  'KA-11-VW-6672','KA-12-DE-3318','KA-13-FG-9945','KA-14-HI-2276','KA-15-LM-5530'
+];
+const DRIVERS = ['R. Naik','M. Iqbal','S. Reddy','P. Kumar','A. Shetty','V. Gowda','N. Hegde','B. Patil','T. Rao','K. Fernandes'];
+
+/* The four standard expense heads from the paper trip sheet, in sheet order.
+   The driver fills these; anything else goes in as an extra line with a label. */
+const EXPENSE_HEADS = ['Food','Parking','Unloading','RTO Charges'];
+/* Suggested extras beyond the standard four. "Other" lets the driver name one. */
+const EXPENSE_EXTRAS = ['Toll','Fine','Repair','Loading','Weighbridge','Other'];
+
+const STOP_TYPES = ['Scheduled','Fuel','Break','Unscheduled'];
+const INACTIVITY_THRESHOLD_MIN = 45;
+/* Ethanol at ~20 °C. Used only to compare delivered weight against the scheduled
+   KL load so short-delivery shows up on the report. */
+const KG_PER_KL = 789;
+
+/* ---------------- state ---------------- */
+const trips = new Map();
+let tripSeq = 4820;
+let openTripId = null;
+
+const nextTripId = () => 'TS-' + (++tripSeq);
+
+/* ---------------- shared-store persistence ----------------
+   The manager and the driver app read/write one shared store (see store.js).
+   snapshot() serialises this page's state; hydrate() overlays a snapshot from
+   the store — used on load and whenever the driver app writes in another tab. */
+function snapshot(){
+  return {
+    trips: [...trips.values()],
+    fuelLog,
+    maintenance,
+    seqs: { tripSeq, maintSeq, fuelSeq }
+  };
+}
+function persist(){ TankerStore.save(snapshot()); }
+function hydrate(s){
+  if (!s) return;
+  trips.clear();
+  (s.trips || []).forEach(t => trips.set(t.id, t));
+  fuelLog.length = 0; (s.fuelLog || []).forEach(x => fuelLog.push(x));
+  maintenance.length = 0; (s.maintenance || []).forEach(x => maintenance.push(x));
+  if (s.seqs){ tripSeq = s.seqs.tripSeq; maintSeq = s.seqs.maintSeq; fuelSeq = s.seqs.fuelSeq; }
+}
+
+/* ---------------- helpers ---------------- */
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $ = id => document.getElementById(id);
+
+function fmtTime(ms){
+  return new Date(ms).toLocaleString([], {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:false});
+}
+function fmtClock(ms){
+  return new Date(ms).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:false});
+}
+function fmtDur(mins){
+  const m = Math.max(0, Math.round(mins));
+  return Math.floor(m/60) + 'h ' + String(m%60).padStart(2,'0') + 'm';
+}
+function localNowValue(){
+  const d = new Date(Date.now() - new Date().getTimezoneOffset()*60000);
+  return d.toISOString().slice(0,16);
+}
+function showErr(elId, msg){
+  $(elId).innerHTML = msg ? '<div class="err">' + esc(msg) + '</div>' : '';
+  /* The longer forms push their error banner off-screen from where the Save
+     button sits, so bring it back into view. */
+  if (msg) $(elId).scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+/**
+ * Highest odometer reading on file for a vehicle, from either the fuel log or
+ * a previous trip. Trip odometers and fuel-log readings describe the same
+ * physical dial, so they have to be checked against each other or one will
+ * quietly contradict the other.
+ */
+function lastKnownOdometer(vehicle){
+  let best = null;
+  const consider = (value, when, source) => {
+    if (typeof value !== 'number' || Number.isNaN(value)) return;
+    if (best === null || value > best.km) best = {km: value, when, source};
+  };
+
+  fuelLog.forEach(e => {
+    if (e.vehicle === vehicle) consider(e.odometer, e.date, 'fuel log');
+  });
+  [...trips.values()].forEach(t => {
+    if (t.vehicle !== vehicle) return;
+    consider(t.openingOdometer, t.departure?.time ?? t.createdAt, t.id);
+    consider(t.closingOdometer, t.arrival?.time ?? t.createdAt, t.id);
+  });
+  return best;
+}
+
+/** Most recent pump rate, preferring this vehicle's own fills. */
+function latestDieselRate(vehicle){
+  const refills = fuelLog.filter(e => e.kind === 'refill').sort((a, b) => b.date - a.date);
+  return (refills.find(e => e.vehicle === vehicle) ?? refills[0])?.ratePerLitre ?? null;
+}
+
+/* Timeline of every logged event, oldest first. Drives the inactivity analysis. */
+function timeline(trip){
+  const ev = [];
+  if (trip.departure) ev.push({t: trip.departure.time, label: 'Departure — ' + trip.routeFrom});
+  trip.stops.forEach(s => ev.push({t: s.time, label: 'Stop — ' + s.location + ' (' + s.type + ')'}));
+  if (trip.arrival) ev.push({t: trip.arrival.time, label: 'Arrival — ' + trip.routeTo});
+  return ev.sort((a,b) => a.t - b.t);
+}
+
+function inactivityGaps(trip){
+  const ev = timeline(trip), gaps = [];
+  for (let i = 1; i < ev.length; i++){
+    const mins = (ev[i].t - ev[i-1].t) / 60000;
+    if (mins >= INACTIVITY_THRESHOLD_MIN){
+      gaps.push({mins, from: ev[i-1], to: ev[i]});
+    }
+  }
+  return gaps;
+}
+
+/* A stop is unauthorized if the driver marked it Unscheduled/Off-route, or if it
+   pushes the trip past the max-stops limit set at scheduling. */
+function classifyStops(trip){
+  let counted = 0;
+  return trip.stops.map(s => {
+    counted++;
+    const reasons = [];
+    if (s.type === 'Unscheduled') reasons.push('Marked unscheduled / off-route');
+    if (counted > trip.maxStops) reasons.push('Exceeds max-stops limit (' + trip.maxStops + ')');
+    return Object.assign({}, s, {unauthorized: reasons.length > 0, reasons});
+  });
+}
+
+/* ---------------- manager: scheduling ---------------- */
+function initForm(){
+  $('f-vehicle').innerHTML = VEHICLES.map(v => '<option>' + esc(v) + '</option>').join('');
+  $('f-driver').innerHTML = DRIVERS.map(d => '<option>' + esc(d) + '</option>').join('');
+  const deadline = new Date(Date.now() + 6*3600*1000 - new Date().getTimezoneOffset()*60000);
+  $('f-deadline').value = deadline.toISOString().slice(0,16);
+}
+
+function scheduleTrip(){
+  const from = $('f-from').value.trim() || $('f-from').placeholder;
+  const to = $('f-to').value.trim() || $('f-to').placeholder;
+  const maxStops = parseInt($('f-maxstops').value, 10);
+  const load = parseFloat($('f-load').value);
+  const deadline = $('f-deadline').value;
+  const gps = $('f-gps').value.trim() || $('f-gps').placeholder;
+  const invoice = $('f-invoice').value.trim() || $('f-invoice').placeholder;
+  const phone = $('f-phone').value.trim() || $('f-phone').placeholder;
+  const advance = parseFloat($('f-advance').value);
+  const expectedReturn = $('f-return').value;
+
+  if (!from || !to) return showErr('schedErr', 'Origin and destination are both required.');
+  if (from.toLowerCase() === to.toLowerCase()) return showErr('schedErr', 'Origin and destination cannot be the same.');
+  if (!Number.isInteger(maxStops) || maxStops < 0) return showErr('schedErr', 'Max stops must be a whole number, zero or more.');
+  if (!(load > 0)) return showErr('schedErr', 'Ethanol load must be greater than zero.');
+  if (!deadline) return showErr('schedErr', 'A delivery deadline is required.');
+  if (!(advance >= 0)) return showErr('schedErr', 'Advance paid must be zero or more.');
+
+  const vehicle = $('f-vehicle').value;
+  const busy = [...trips.values()].find(t => t.vehicle === vehicle && t.status !== 'completed');
+  if (busy) return showErr('schedErr', vehicle + ' already has an open trip (' + busy.id + '). Close it before scheduling another.');
+
+  showErr('schedErr', '');
+  const trip = {
+    id: nextTripId(),
+    vehicle,
+    driver: $('f-driver').value,
+    routeFrom: from,
+    routeTo: to,
+    maxStops,
+    loadKL: load,
+    deadline: new Date(deadline).getTime(),
+    gpsPoint: gps,
+    // Manager-set "main things" — locked; the driver cannot edit these.
+    invoiceNo: invoice,
+    driverPhone: phone,
+    advance,
+    expectedReturn: expectedReturn ? new Date(expectedReturn).getTime() : null,
+    status: 'scheduled',
+    createdAt: Date.now(),
+    departure: null,
+    arrival: null,
+    stops: [],
+    // Driver-owned: expenses added against this trip, and diesel for mileage.
+    expenses: [],
+    dieselLitres: null
+  };
+  trips.set(trip.id, trip);
+  persist();
+
+  $('issued').innerHTML =
+    '<div class="card"><div class="card-body"><div class="ok">' +
+      '<div class="k">Trip ID issued — hand this to the driver</div>' +
+      '<div class="v">' + esc(trip.id) + '</div>' +
+      '<div class="sub">' + esc(trip.vehicle) + ' · ' + esc(trip.driver) + ' · ' +
+        esc(trip.routeFrom) + ' → ' + esc(trip.routeTo) + '</div>' +
+    '</div></div></div>';
+
+  renderManager();
+}
+
+/* ---------------- manager: rendering ---------------- */
+function statusPill(status){
+  const map = {scheduled:['p-amber','Scheduled'], active:['p-green','Active'], completed:['p-grey','Completed']};
+  const [cls, text] = map[status];
+  return '<span class="pill ' + cls + '">' + text + '</span>';
+}
+
+function renderManager(){
+  const all = [...trips.values()];
+
+  const active = all.filter(t => t.status === 'active');
+  const flagged = all.reduce((n, t) => n + classifyStops(t).filter(s => s.unauthorized).length, 0);
+  const dispatched = all.filter(t => t.status !== 'scheduled').reduce((n, t) => n + t.loadKL, 0);
+  const late = all.filter(t => t.status === 'completed' && t.arrival.time > t.deadline).length;
+
+  $('fleetStats').innerHTML = [
+    ['Trips Active', active.length, ''],
+    ['Scheduled', all.filter(t => t.status === 'scheduled').length, ''],
+    ['Completed', all.filter(t => t.status === 'completed').length, ''],
+    ['Ethanol Dispatched', dispatched.toFixed(1) + ' KL', 'a'],
+    ['Unauthorized Stops', flagged, flagged ? 'r' : 'g'],
+    ['Late Arrivals', late, late ? 'r' : 'g'],
+    ['Fleet Size', VEHICLES.length, ''],
+    ['Maintenance Spend', inr(maintenance.reduce((n, r) => n + recTotal(r), 0)), 'a']
+  ].map(([k, v, cls]) =>
+    '<div class="stat"><div class="k">' + k + '</div><div class="v ' + cls + '">' + v + '</div></div>'
+  ).join('');
+
+  const board = all.slice().sort((a, b) => b.createdAt - a.createdAt);
+  $('tripBoard').innerHTML = board.length === 0
+    ? '<div class="empty">No trips yet — schedule one to begin.</div>'
+    : '<table><thead><tr><th>Trip ID</th><th>Vehicle</th><th>Driver</th><th>Route</th><th>Stops</th><th>Status</th></tr></thead><tbody>' +
+      board.map(t => {
+        const stops = classifyStops(t);
+        const bad = stops.filter(s => s.unauthorized).length;
+        const stopCell = stops.length + ' / ' + t.maxStops +
+          (bad ? ' <span class="pill p-red">' + bad + ' flagged</span>' : '');
+        return '<tr><td class="strong">' + esc(t.id) + '</td><td>' + esc(t.vehicle) + '</td><td>' + esc(t.driver) +
+          '</td><td>' + esc(t.routeFrom) + ' → ' + esc(t.routeTo) + '</td><td>' + stopCell +
+          '</td><td>' + statusPill(t.status) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+
+  const done = all.filter(t => t.status === 'completed').sort((a, b) => b.arrival.time - a.arrival.time);
+  $('reportList').innerHTML = done.length === 0
+    ? '<div class="empty">No completed trips yet.</div>'
+    : '<table><thead><tr><th>Trip ID</th><th>Route</th><th>Duration</th><th>Distance</th><th>Delivered</th><th>Flags</th></tr></thead><tbody>' +
+      done.map(t => {
+        const stops = classifyStops(t);
+        const bad = stops.filter(s => s.unauthorized).length + inactivityGaps(t).length;
+        const mins = (t.arrival.time - t.departure.time) / 60000;
+        const delivered = t.departure.weight - t.arrival.weight;
+        return '<tr class="clickable" data-report="' + esc(t.id) + '"><td class="strong">' + esc(t.id) +
+          '</td><td>' + esc(t.routeFrom) + ' → ' + esc(t.routeTo) + '</td><td>' + fmtDur(mins) +
+          '</td><td>' + (t.closingOdometer - t.openingOdometer).toLocaleString('en-IN') + ' km' +
+          '</td><td>' + delivered.toLocaleString() + ' kg</td><td>' +
+          (bad ? '<span class="pill p-red">' + bad + '</span>' : '<span class="pill p-green">clean</span>') +
+          '</td></tr>';
+      }).join('') + '</tbody></table>';
+
+  document.querySelectorAll('[data-report]').forEach(row => {
+    row.addEventListener('click', () => openReport(row.dataset.report));
+  });
+}
+
+/* ---------------- driver ---------------- */
+function lookupTrip(){
+  const id = $('f-tripid').value.trim().toUpperCase();
+  if (!id) return showErr('lookupErr', 'Enter the Trip ID issued by dispatch.');
+  if (!trips.has(id)) return showErr('lookupErr', 'No trip found for ' + id + '. Check the ID with dispatch.');
+  showErr('lookupErr', '');
+  openTripId = id;
+  renderDriver();
+}
+
+function renderDriver(){
+  const panel = $('driverPanel');
+  if (!openTripId){
+    panel.innerHTML = '<div class="card"><div class="card-body"><div class="empty">Enter a Trip ID to open your trip sheet.</div></div></div>';
+    return;
+  }
+  const t = trips.get(openTripId);
+  const header =
+    '<div class="card"><div class="card-head"><h2>' + esc(t.id) + '</h2>' + statusPill(t.status) + '</div>' +
+    '<div class="card-body"><div class="stats">' +
+      '<div class="stat"><div class="k">Vehicle</div><div class="v" style="font-size:12px">' + esc(t.vehicle) + '</div></div>' +
+      '<div class="stat"><div class="k">Route</div><div class="v" style="font-size:12px">' + esc(t.routeFrom) + ' → ' + esc(t.routeTo) + '</div></div>' +
+      '<div class="stat"><div class="k">Load</div><div class="v a">' + t.loadKL.toFixed(1) + ' KL</div></div>' +
+      '<div class="stat"><div class="k">Stops Allowed</div><div class="v">' + t.stops.length + ' / ' + t.maxStops + '</div></div>' +
+      '<div class="stat"><div class="k">Deadline</div><div class="v" style="font-size:12px">' + fmtTime(t.deadline) + '</div></div>' +
+      '<div class="stat"><div class="k">GPS Point</div><div class="v" style="font-size:11px">' + esc(t.gpsPoint) + '</div></div>' +
+      (t.openingOdometer != null
+        ? '<div class="stat"><div class="k">Odometer</div><div class="v" style="font-size:12px">' +
+          t.openingOdometer.toLocaleString('en-IN') +
+          (t.closingOdometer != null
+            ? ' → ' + t.closingOdometer.toLocaleString('en-IN')
+            : ' km at start') + '</div></div>'
+        : '') +
+    '</div></div></div>';
+
+  let body = '';
+  if (t.status === 'scheduled'){
+    body =
+      '<div class="card"><div class="card-head"><h2>Confirm Departure</h2><span class="hint">step 2</span></div>' +
+      '<div class="card-body"><div id="depErr"></div>' +
+        '<div class="row2">' +
+          '<div class="field"><label>Departure Weight (kg)</label><input id="d-weight" type="number" min="0" step="1" value="14360"></div>' +
+          '<div class="field"><label>Departure Time</label><input id="d-time" type="datetime-local" value="' + localNowValue() + '"></div>' +
+        '</div>' +
+        '<div class="field"><label>Opening Odometer (km) <span class="req">— required</span></label>' +
+          '<input id="d-odo" type="number" min="0" step="1" placeholder="reading on the dash right now"></div>' +
+        odometerHint(t.vehicle) +
+        '<button id="btn-depart">Start Trip &amp; Begin GPS Tracking</button>' +
+      '</div></div>';
+  } else if (t.status === 'active'){
+    body =
+      '<div class="card"><div class="card-head"><h2>Log a Stop</h2><span class="hint">step 3</span></div>' +
+      '<div class="card-body"><div id="stopErr"></div>' +
+        '<div class="field"><label>Location</label><input id="s-loc" placeholder="Dharwad weighbridge"></div>' +
+        '<div class="row2">' +
+          '<div class="field"><label>Stop Type</label><select id="s-type">' +
+            STOP_TYPES.map(x => '<option>' + x + '</option>').join('') + '</select></div>' +
+          '<div class="field"><label>Timestamp</label><input id="s-time" type="datetime-local" value="' + localNowValue() + '"></div>' +
+        '</div>' +
+        '<button id="btn-stop">Save Stop</button>' +
+        (t.stops.length >= t.maxStops
+          ? '<p class="note" style="color:var(--amber)">Max-stops limit reached — any further stop will be flagged unauthorized on the report.</p>'
+          : '<p class="note">' + (t.maxStops - t.stops.length) + ' authorized stop(s) remaining.</p>') +
+      '</div></div>' +
+      stopsCard(t) +
+      expensesCard(t) +
+      '<div class="card"><div class="card-head"><h2>End Trip</h2><span class="hint">step 4</span></div>' +
+      '<div class="card-body"><div id="arrErr"></div>' +
+        '<div class="row2">' +
+          '<div class="field"><label>Arrival Weight (kg)</label><input id="a-weight" type="number" min="0" step="1" value="1200"></div>' +
+          '<div class="field"><label>Arrival Time</label><input id="a-time" type="datetime-local" value="' + localNowValue() + '"></div>' +
+        '</div>' +
+        '<div class="row2">' +
+          '<div class="field"><label>Closing Odometer (km) <span class="req">— required</span></label>' +
+            '<input id="a-odo" type="number" min="0" step="1" placeholder="reading on arrival"></div>' +
+          '<div class="field"><label>Diesel used this trip (L)</label>' +
+            '<input id="a-diesel" type="number" min="0" step="0.01" placeholder="500"></div>' +
+        '</div>' +
+        '<p class="note">Opened at ' + t.openingOdometer.toLocaleString('en-IN') +
+          ' km. Closing − opening is the trip distance; with diesel litres it gives this trip’s mileage, both fed into the fuel log.</p>' +
+        '<button id="btn-arrive" class="danger">Log Arrival &amp; Generate Report</button>' +
+      '</div></div>';
+  } else {
+    body =
+      '<div class="card"><div class="card-body">' +
+      '<div class="ok"><div class="k">Trip closed</div><div class="v" style="font-size:22px">Report ready</div></div>' +
+      '<button class="ghost" id="btn-openreport">View Trip Report</button></div></div>' + stopsCard(t);
+  }
+
+  panel.innerHTML = header + body;
+  wireDriver(t);
+}
+
+function odometerHint(vehicle){
+  const last = lastKnownOdometer(vehicle);
+  return last
+    ? '<p class="note">Last recorded for ' + esc(vehicle) + ': <b style="font-family:var(--f-mono)">' +
+      last.km.toLocaleString('en-IN') + ' km</b> on ' + fmtDate(last.when) + ' (' + esc(last.source) + ').</p>'
+    : '<p class="note">No previous odometer reading on file for ' + esc(vehicle) + '.</p>';
+}
+
+function stopsCard(t){
+  const stops = classifyStops(t);
+  if (stops.length === 0){
+    return '<div class="card"><div class="card-head"><h2>Stops Logged</h2></div><div class="card-body">' +
+           '<div class="empty">No stops logged yet.</div></div></div>';
+  }
+  return '<div class="card"><div class="card-head"><h2>Stops Logged</h2><span class="hint">' + stops.length + ' of ' + t.maxStops + ' allowed</span></div>' +
+    '<div class="card-body"><table><thead><tr><th>#</th><th>Time</th><th>Location</th><th>Type</th><th>Status</th></tr></thead><tbody>' +
+    stops.map((s, i) =>
+      '<tr><td class="strong">' + (i+1) + '</td><td>' + fmtClock(s.time) + '</td><td>' + esc(s.location) + '</td><td>' + esc(s.type) + '</td><td>' +
+      (s.unauthorized
+        ? '<span class="pill p-red">Unauthorized</span><div class="note" style="margin-top:4px">' + esc(s.reasons.join('; ')) + '</div>'
+        : '<span class="pill p-green">Authorized</span>') + '</td></tr>'
+    ).join('') + '</tbody></table></div></div>';
+}
+
+/**
+ * The driver's expense sheet — the only money field they own. The standard
+ * four heads plus an extras picker; each line can carry a bill photo like the
+ * Pay & Park receipt. The manager's advance and invoice are shown read-only so
+ * the driver can see what they are settling against but cannot change it.
+ */
+function expensesCard(t){
+  const s = tripSettlement(t);
+  const rows = t.expenses.length === 0
+    ? '<div class="empty">No expenses added yet.</div>'
+    : '<table><thead><tr><th>Head</th><th>Note</th><th class="money">Amount</th><th>Bill</th><th></th></tr></thead><tbody>' +
+      t.expenses.map((e, i) =>
+        '<tr><td class="strong">' + esc(e.head) + '</td>' +
+        '<td>' + (e.note ? esc(e.note) : '<span style="color:var(--faint)">—</span>') + '</td>' +
+        '<td class="money">' + inr(e.amount) + '</td>' +
+        '<td>' + (e.billUrl
+          ? '<a class="billlink" href="' + e.billUrl + '" target="_blank" rel="noopener">📎 ' + esc(e.billName) + '</a>'
+          : '<span style="color:var(--faint)">none</span>') + '</td>' +
+        '<td><button class="ghost slim" data-delexp="' + i + '">Remove</button></td></tr>'
+      ).join('') +
+      '<tr class="ts-total"><td colspan="2">Total Expenses</td><td class="money">' + inr(s.total) +
+        '</td><td colspan="2"></td></tr>' +
+      '</tbody></table>';
+
+  const headOpts = EXPENSE_HEADS.concat(EXPENSE_EXTRAS)
+    .map(h => '<option>' + h + '</option>').join('');
+
+  return '<div class="card"><div class="card-head"><h2>Trip Expenses</h2>' +
+      '<span class="hint">advance ₹' + (t.advance || 0).toLocaleString('en-IN') + ' · driver-entered</span></div>' +
+    '<div class="card-body"><div id="expErr"></div>' +
+      rows +
+      '<div class="divider"></div>' +
+      '<div class="row2">' +
+        '<div class="field"><label>Expense Head</label><select id="e-head">' + headOpts + '</select></div>' +
+        '<div class="field"><label>Amount (₹)</label><input id="e-amount" type="number" min="0" step="1" placeholder="1800"></div>' +
+      '</div>' +
+      '<div class="field" id="e-otherwrap" style="display:none"><label>Name the expense</label>' +
+        '<input id="e-other" placeholder="e.g. Green tax"></div>' +
+      '<div class="field"><label>Note (optional)</label><input id="e-note" placeholder="Pay & Park, Irumpanam"></div>' +
+      '<div class="field"><label>Bill / Receipt (optional)</label>' +
+        '<input id="e-bill" type="file" accept="image/*,application/pdf" class="filein"></div>' +
+      '<button id="btn-expense">Add Expense</button>' +
+      '<p class="note">Balance so far: <b class="' + (s.balance >= 0 ? 'a' : 'r') +
+        '" style="font-family:var(--f-mono)">' + inr(Math.abs(s.balance)) + '</b> ' +
+        (s.balance >= 0 ? 'to be paid to the driver' : 'to recover from the driver') +
+        '. Vehicle, route, advance and invoice were set by dispatch and cannot be changed here.</p>' +
+    '</div></div>';
+}
+
+function wireDriver(t){
+  const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+
+  // Expense head → reveal the "name it" box only for Other.
+  const headSel = $('e-head');
+  if (headSel){
+    const syncOther = () => {
+      $('e-otherwrap').style.display = headSel.value === 'Other' ? '' : 'none';
+    };
+    headSel.addEventListener('change', syncOther); syncOther();
+  }
+
+  on('btn-expense', () => {
+    let head = $('e-head').value;
+    if (head === 'Other'){
+      head = $('e-other').value.trim();
+      if (!head) return showErr('expErr', 'Give the expense a name.');
+    }
+    const amount = parseFloat($('e-amount').value);
+    if (!(amount > 0)) return showErr('expErr', 'Expense amount must be greater than zero.');
+    showErr('expErr', '');
+    const file = $('e-bill').files[0];
+    t.expenses.push({
+      head,
+      amount,
+      note: $('e-note').value.trim(),
+      billName: file ? file.name : null,
+      billUrl: file ? URL.createObjectURL(file) : null,
+      at: Date.now()
+    });
+    renderDriver(); renderManager();
+  });
+
+  document.querySelectorAll('[data-delexp]').forEach(btn =>
+    btn.addEventListener('click', () => {
+      t.expenses.splice(parseInt(btn.dataset.delexp, 10), 1);
+      renderDriver(); renderManager();
+    }));
+
+  on('btn-depart', () => {
+    const w = parseFloat($('d-weight').value);
+    const time = $('d-time').value;
+    const odo = parseInt($('d-odo').value, 10);
+    if (!(w > 0)) return showErr('depErr', 'Departure weight must be greater than zero.');
+    if (!time) return showErr('depErr', 'Departure time is required.');
+    if (!Number.isInteger(odo) || odo < 0) {
+      return showErr('depErr', 'Opening odometer reading is required before the trip can start.');
+    }
+    const last = lastKnownOdometer(t.vehicle);
+    if (last && odo < last.km) {
+      return showErr('depErr', 'Opening odometer of ' + odo.toLocaleString('en-IN') +
+        ' km is below the last recorded ' + last.km.toLocaleString('en-IN') + ' km for ' +
+        t.vehicle + ' (' + last.source + '). Check the reading.');
+    }
+
+    t.departure = {weight: w, time: new Date(time).getTime()};
+    t.openingOdometer = odo;
+    t.status = 'active';
+    renderDriver(); renderManager();
+  });
+
+  on('btn-stop', () => {
+    const loc = $('s-loc').value.trim() || $('s-loc').placeholder;
+    const time = $('s-time').value;
+    if (!loc) return showErr('stopErr', 'Stop location is required.');
+    if (!time) return showErr('stopErr', 'Stop timestamp is required.');
+    const ts = new Date(time).getTime();
+    if (ts < t.departure.time) return showErr('stopErr', 'A stop cannot be logged before departure (' + fmtTime(t.departure.time) + ').');
+    t.stops.push({location: loc, type: $('s-type').value, time: ts});
+    renderDriver(); renderManager();
+  });
+
+  on('btn-arrive', () => {
+    const w = parseFloat($('a-weight').value);
+    const time = $('a-time').value;
+    const odo = parseInt($('a-odo').value, 10);
+    if (!(w >= 0)) return showErr('arrErr', 'Arrival weight is required.');
+    if (w > t.departure.weight) return showErr('arrErr', 'Arrival weight cannot exceed departure weight (' + t.departure.weight.toLocaleString() + ' kg).');
+    if (!time) return showErr('arrErr', 'Arrival time is required.');
+    const ts = new Date(time).getTime();
+    if (ts <= t.departure.time) return showErr('arrErr', 'Arrival must be after departure (' + fmtTime(t.departure.time) + ').');
+    const lastStop = t.stops.length ? Math.max(...t.stops.map(s => s.time)) : 0;
+    if (ts < lastStop) return showErr('arrErr', 'Arrival cannot be before the last logged stop (' + fmtTime(lastStop) + ').');
+    if (!Number.isInteger(odo) || odo < 0) {
+      return showErr('arrErr', 'Closing odometer reading is required to end the trip.');
+    }
+    if (odo <= t.openingOdometer) {
+      return showErr('arrErr', 'Closing odometer must be greater than the opening reading of ' +
+        t.openingOdometer.toLocaleString('en-IN') + ' km.');
+    }
+    const dieselRaw = $('a-diesel').value;
+    const diesel = dieselRaw === '' ? null : parseFloat(dieselRaw);
+    if (diesel !== null && !(diesel > 0)) {
+      return showErr('arrErr', 'Diesel litres must be greater than zero, or left blank.');
+    }
+
+    t.arrival = {weight: w, time: ts};
+    t.closingOdometer = odo;
+    t.dieselLitres = diesel;
+    t.status = 'completed';
+
+    /* The closing reading is a real odometer observation, so it belongs in the
+       fuel log too — otherwise trip distance and fleet distance drift apart. */
+    fuelLog.push({
+      id: 'FL-' + (++fuelSeq), vehicle: t.vehicle, kind: 'reading',
+      date: ts, odometer: odo, source: t.id
+    });
+
+    renderDriver(); renderManager(); renderFuel(); openReport(t.id);
+  });
+
+  on('btn-openreport', () => openReport(t.id));
+}
+
+/**
+ * Distance from the two odometer readings, plus a diesel estimate. The fuel
+ * figure is derived from the vehicle's measured mileage, not from fuel actually
+ * booked to this trip, so it is labelled as an estimate rather than a cost.
+ */
+function distanceBlock(t){
+  const distance = t.closingOdometer - t.openingOdometer;
+  const stats = vehicleFuelStats(t.vehicle);
+  const kmpl = stats?.kmPerLitre ?? null;
+  const rate = latestDieselRate(t.vehicle);
+  // Prefer the diesel the driver actually logged for this trip; fall back to an
+  // estimate from the vehicle's measured mileage only when it wasn't recorded.
+  const litres = t.dieselLitres != null ? t.dieselLitres : (kmpl ? distance / kmpl : null);
+  const cost = (litres != null && rate != null) ? litres * rate : null;
+  const tripKmpl = tripMileage(t);
+
+  const dieselIsActual = t.dieselLitres != null;
+  const mileageShown = dieselIsActual ? tripKmpl : kmpl;
+
+  return '<div class="stats">' +
+      '<div class="stat"><div class="k">Opening Odometer</div><div class="v">' +
+        t.openingOdometer.toLocaleString('en-IN') + '</div></div>' +
+      '<div class="stat"><div class="k">Closing Odometer</div><div class="v">' +
+        t.closingOdometer.toLocaleString('en-IN') + '</div></div>' +
+      '<div class="stat"><div class="k">Distance Covered</div><div class="v a">' +
+        distance.toLocaleString('en-IN') + ' km</div></div>' +
+      '<div class="stat"><div class="k">' + (dieselIsActual ? 'Trip Mileage' : 'Vehicle Mileage') + '</div><div class="v">' +
+        (mileageShown ? mileageShown.toFixed(2) + ' km/L' : '—') + '</div></div>' +
+      '<div class="stat"><div class="k">' + (dieselIsActual ? 'Diesel Used' : 'Est. Diesel') + '</div><div class="v">' +
+        (litres ? Math.round(litres).toLocaleString('en-IN') + ' L' : '—') + '</div></div>' +
+      '<div class="stat"><div class="k">' + (dieselIsActual ? 'Diesel Cost' : 'Est. Fuel Cost') + '</div><div class="v a">' +
+        (cost ? inr(cost) : '—') + '</div></div>' +
+    '</div>' +
+    (dieselIsActual
+      ? '<p class="note">Diesel of ' + t.dieselLitres.toLocaleString('en-IN') + ' L was logged by the driver for this trip → ' +
+        (tripKmpl ? tripKmpl.toFixed(2) + ' km/L' : '—') + ' over ' + distance.toLocaleString('en-IN') +
+        ' km. Cost valued at the latest pump rate of ' + (rate ? inr(rate) : '—') + '/L.</p>'
+      : kmpl
+        ? '<p class="note">Driver did not log diesel for this trip, so this is estimated from ' + esc(t.vehicle) +
+          '’s measured ' + kmpl.toFixed(2) + ' km/L at ' + inr(rate) + '/L — an estimate, not a booked cost.</p>'
+        : '<p class="note">No diesel logged and no fuel history for ' + esc(t.vehicle) +
+          ' yet, so diesel cannot be shown for this trip.</p>');
+}
+
+/* ---------------- trip expenses & settlement ----------------
+   The money side of the paper trip sheet. Expenses are the driver's only
+   editable field; everything they settle against was fixed by the manager. */
+
+const tripExpenseTotal = t => t.expenses.reduce((n, e) => n + e.amount, 0);
+
+/* Group expenses by head so the standard four always show, extras beneath. */
+function expensesByHead(t){
+  const map = new Map();
+  t.expenses.forEach(e => map.set(e.head, (map.get(e.head) || 0) + e.amount));
+  return map;
+}
+
+function tripSettlement(t){
+  const total = tripExpenseTotal(t);
+  const advance = t.advance || 0;
+  const balance = total - advance;   // >0 pay the driver, <0 recover from driver
+  return {total, advance, balance};
+}
+
+const tripDistance = t =>
+  (t.openingOdometer != null && t.closingOdometer != null)
+    ? t.closingOdometer - t.openingOdometer : null;
+
+const tripMileage = t => {
+  const d = tripDistance(t);
+  return (d != null && t.dieselLitres > 0) ? d / t.dieselLitres : null;
+};
+
+/**
+ * The standardised trip sheet — the on-screen version of the paper form, with
+ * every total computed rather than hand-totalled. Used in the trip report and
+ * printable. `editable` shows the amounts the driver still owns; otherwise the
+ * sheet is the settled record.
+ */
+function tripSheetBlock(t){
+  const heads = expensesByHead(t);
+  const s = tripSettlement(t);
+  const dist = tripDistance(t);
+  const mileage = tripMileage(t);
+
+  const line = (label, val, cls) =>
+    '<tr><td>' + esc(label) + '</td><td class="money ' + (cls || '') + '">' + val + '</td></tr>';
+
+  // Standard four first, in sheet order, then any extra heads the driver added.
+  const standardRows = EXPENSE_HEADS.map(h =>
+    line(h, heads.has(h) ? inr(heads.get(h)) : '—')).join('');
+  const extraHeads = [...heads.keys()].filter(h => !EXPENSE_HEADS.includes(h));
+  const extraRows = extraHeads.map(h => line(h, inr(heads.get(h)))).join('');
+
+  const balanceLabel = s.balance >= 0
+    ? 'Balance to pay driver' : 'Balance to recover from driver';
+
+  return '<div class="tripsheet">' +
+    '<div class="ts-grid">' +
+      '<div><span class="ts-k">Invoice / Dispatch</span><span class="ts-v">' + esc(t.invoiceNo || '—') + '</span></div>' +
+      '<div><span class="ts-k">Vehicle</span><span class="ts-v">' + esc(t.vehicle) + '</span></div>' +
+      '<div><span class="ts-k">Driver</span><span class="ts-v">' + esc(t.driver) + '</span></div>' +
+      '<div><span class="ts-k">Driver Phone</span><span class="ts-v">' + esc(t.driverPhone || '—') + '</span></div>' +
+      '<div><span class="ts-k">Destination</span><span class="ts-v">' + esc(t.routeTo) + '</span></div>' +
+      '<div><span class="ts-k">Return Date</span><span class="ts-v">' +
+        (t.arrival ? fmtDate(t.arrival.time) : t.expectedReturn ? fmtDate(t.expectedReturn) + ' (exp.)' : '—') + '</span></div>' +
+    '</div>' +
+
+    '<div class="ts-cols">' +
+      '<div><div class="ts-head">Expenses</div><table><tbody>' +
+        standardRows + extraRows +
+        '<tr class="ts-total"><td>Total Expenses</td><td class="money">' + inr(s.total) + '</td></tr>' +
+        line('Advance received', inr(s.advance)) +
+        '<tr class="ts-total"><td>' + balanceLabel + '</td><td class="money ' +
+          (s.balance >= 0 ? 'a' : 'r') + '">' + inr(Math.abs(s.balance)) + '</td></tr>' +
+      '</tbody></table></div>' +
+
+      '<div><div class="ts-head">Distance &amp; Fuel</div><table><tbody>' +
+        line('Opening KM', t.openingOdometer != null ? t.openingOdometer.toLocaleString('en-IN') : '—') +
+        line('Closing KM', t.closingOdometer != null ? t.closingOdometer.toLocaleString('en-IN') : '—') +
+        line('Total KM', dist != null ? dist.toLocaleString('en-IN') : '—') +
+        line('Diesel (L)', t.dieselLitres != null ? t.dieselLitres.toLocaleString('en-IN') : '—') +
+        '<tr class="ts-total"><td>Mileage</td><td class="money g">' +
+          (mileage != null ? mileage.toFixed(2) + ' km/L' : '—') + '</td></tr>' +
+      '</tbody></table></div>' +
+    '</div>' +
+
+    '<div class="ts-signs">' +
+      ['Vehicle Incharge','Accounts Manager','GM'].map(r =>
+        '<div class="ts-sign"><div class="ts-sign-line"></div><span>' + r + '</span></div>').join('') +
+    '</div>' +
+  '</div>';
+}
+
+/* ---------------- report ---------------- */
+function openReport(id){
+  const t = trips.get(id);
+  const stops = classifyStops(t);
+  const bad = stops.filter(s => s.unauthorized);
+  const gaps = inactivityGaps(t);
+  const mins = (t.arrival.time - t.departure.time) / 60000;
+  const delivered = t.departure.weight - t.arrival.weight;
+  const expected = t.loadKL * KG_PER_KL;
+  const variance = delivered - expected;
+  const variancePct = (variance / expected) * 100;
+  const late = t.arrival.time > t.deadline;
+
+  const ev = timeline(t);
+
+  $('modalBody').innerHTML =
+    '<div class="card-head"><h2>Trip Report — ' + esc(t.id) + '</h2>' +
+      '<button class="ghost slim" id="btn-closemodal">Close</button></div>' +
+    '<div class="card-body">' +
+
+      '<div class="stats">' +
+        '<div class="stat"><div class="k">Vehicle</div><div class="v" style="font-size:12px">' + esc(t.vehicle) + '</div></div>' +
+        '<div class="stat"><div class="k">Driver</div><div class="v" style="font-size:12px">' + esc(t.driver) + '</div></div>' +
+        '<div class="stat"><div class="k">Route</div><div class="v" style="font-size:12px">' + esc(t.routeFrom) + ' → ' + esc(t.routeTo) + '</div></div>' +
+        '<div class="stat"><div class="k">Trip Duration</div><div class="v a">' + fmtDur(mins) + '</div></div>' +
+        '<div class="stat"><div class="k">Arrival vs Deadline</div><div class="v ' + (late ? 'r' : 'g') + '" style="font-size:12px">' +
+          (late ? 'Late by ' + fmtDur((t.arrival.time - t.deadline)/60000) : 'On time') + '</div></div>' +
+      '</div>' +
+
+      '<div class="divider"></div>' +
+      '<div class="card-head" style="padding:0 0 10px;border:none"><h2>Delivered Quantity</h2></div>' +
+      '<div class="stats">' +
+        '<div class="stat"><div class="k">Departure Weight</div><div class="v">' + t.departure.weight.toLocaleString() + ' kg</div></div>' +
+        '<div class="stat"><div class="k">Arrival Weight</div><div class="v">' + t.arrival.weight.toLocaleString() + ' kg</div></div>' +
+        '<div class="stat"><div class="k">Delivered</div><div class="v g">' + delivered.toLocaleString() + ' kg</div></div>' +
+        '<div class="stat"><div class="k">Scheduled Load</div><div class="v">' + t.loadKL.toFixed(1) + ' KL</div></div>' +
+        '<div class="stat"><div class="k">Variance vs Load</div><div class="v ' + (Math.abs(variancePct) > 2 ? 'r' : 'g') + '">' +
+          (variance >= 0 ? '+' : '') + Math.round(variance).toLocaleString() + ' kg</div></div>' +
+      '</div>' +
+      '<p class="note">Expected ' + Math.round(expected).toLocaleString() + ' kg at ' + KG_PER_KL +
+        ' kg/KL. Variance of ' + variancePct.toFixed(1) + '% — anything past ±2% is worth a weighbridge recheck.</p>' +
+
+      '<div class="divider"></div>' +
+      '<div class="card-head" style="padding:0 0 10px;border:none"><h2>Trip Sheet — Settlement</h2>' +
+        '<span class="hint">standardised · auto-totalled</span></div>' +
+      tripSheetBlock(t) +
+
+      '<div class="divider"></div>' +
+      '<div class="card-head" style="padding:0 0 10px;border:none"><h2>Distance &amp; Fuel</h2></div>' +
+      distanceBlock(t) +
+
+      '<div class="divider"></div>' +
+      '<div class="card-head" style="padding:0 0 10px;border:none"><h2>Stops</h2>' +
+        '<span class="hint">' + stops.length + ' logged · limit ' + t.maxStops + '</span></div>' +
+      (stops.length === 0 ? '<div class="empty">No stops logged — direct run.</div>' :
+        '<table><thead><tr><th>#</th><th>Time</th><th>Location</th><th>Type</th><th>Status</th></tr></thead><tbody>' +
+        stops.map((s, i) =>
+          '<tr><td class="strong">' + (i+1) + '</td><td>' + fmtClock(s.time) + '</td><td>' + esc(s.location) +
+          '</td><td>' + esc(s.type) + '</td><td>' +
+          (s.unauthorized
+            ? '<span class="pill p-red">Unauthorized</span><div class="note" style="margin-top:4px">' + esc(s.reasons.join('; ')) + '</div>'
+            : '<span class="pill p-green">Authorized</span>') + '</td></tr>'
+        ).join('') + '</tbody></table>') +
+
+      '<div class="divider"></div>' +
+      '<div class="card-head" style="padding:0 0 10px;border:none"><h2>Inactivity Analysis</h2>' +
+        '<span class="hint">threshold ' + INACTIVITY_THRESHOLD_MIN + ' min</span></div>' +
+      (gaps.length === 0
+        ? '<div class="empty">No gaps of ' + INACTIVITY_THRESHOLD_MIN + ' minutes or more between logged events.</div>'
+        : gaps.map(g =>
+            '<div class="flagline"><b>' + fmtDur(g.mins) + ' gap</b> between ' + esc(g.from.label) + ' at ' + fmtClock(g.from.t) +
+            ' and ' + esc(g.to.label) + ' at ' + fmtClock(g.to.t) + '</div>'
+          ).join('')) +
+
+      '<div class="divider"></div>' +
+      '<div class="card-head" style="padding:0 0 10px;border:none"><h2>Event Timeline</h2></div>' +
+      ev.map(e => '<div class="flagline">' + fmtTime(e.t) + ' — ' + esc(e.label) + '</div>').join('') +
+
+      '<div class="divider"></div>' +
+      '<div class="stats">' +
+        '<div class="stat"><div class="k">Unauthorized Stops</div><div class="v ' + (bad.length ? 'r' : 'g') + '">' + bad.length + '</div></div>' +
+        '<div class="stat"><div class="k">Inactivity Flags</div><div class="v ' + (gaps.length ? 'r' : 'g') + '">' + gaps.length + '</div></div>' +
+        '<div class="stat"><div class="k">Overall</div><div class="v ' + (bad.length + gaps.length ? 'r' : 'g') + '" style="font-size:12px">' +
+          (bad.length + gaps.length ? 'Needs review' : 'Clean') + '</div></div>' +
+      '</div>' +
+    '</div>';
+
+  $('modalWrap').classList.add('open');
+  $('btn-closemodal').addEventListener('click', () => $('modalWrap').classList.remove('open'));
+}
+
+/* ---------------- maintenance & costs ----------------
+   Every category of work an ethanol tanker actually goes through, including the
+   hazmat-specific certification and safety items that carry their own bills. */
+const MAINT_TYPES = [
+  'Preventive Service','Engine & Transmission','Tyres & Wheels','Brakes & Suspension',
+  'Electrical & Battery','Body & Cabin','Tanker Barrel & Manhole','Valves, Hoses & Seals',
+  'Pump & Metering Unit','Safety Equipment (hazmat)','Tank Calibration & Certification',
+  'Statutory (FC / PUC / Permit)','Insurance','Breakdown / Roadside','Accident Repair'
+];
+const PAY_STATUS = ['Paid','Unpaid','Part-paid'];
+
+const maintenance = [];
+let maintSeq = 1000;
+
+const inr = n => '₹' + Math.round(n).toLocaleString('en-IN');
+const recTotal = r => r.amount * (1 + r.gstPct / 100);
+const recGst = r => r.amount * (r.gstPct / 100);
+const DAY = 86400000;
+const fmtDate = ms => new Date(ms).toLocaleDateString([], {day:'2-digit', month:'short', year:'numeric'});
+const dateValue = ms => new Date(ms - new Date(ms).getTimezoneOffset()*60000).toISOString().slice(0,10);
+
+/* Placeholder history so the rollups have something to show — replace with the
+   real workshop ledger when the depot data is imported. */
+[
+  {v:'KA-05-AB-4471', t:'Preventive Service', d:'40,000 km service — engine oil, filters, coolant flush', ven:'Ashok Leyland Authorised, Belagavi', inv:'ALB/26/3391', ago:12, odo:142880, amt:18400, st:'Paid', next:78},
+  {v:'KA-05-AB-4471', t:'Tyres & Wheels', d:'4 × rear tyres replaced, wheel alignment', ven:'MRF Tyre Centre, Dharwad', inv:'MRF/DWD/8842', ago:47, odo:138200, amt:96000, st:'Paid', next:null},
+  {v:'KA-01-CT-9012', t:'Valves, Hoses & Seals', d:'Bottom-loading valve reseat, 2 × discharge hose replaced', ven:'Pragati Tanker Works, Bengaluru', inv:'PTW/26/0455', ago:23, odo:98450, amt:34500, st:'Unpaid', next:196},
+  {v:'KA-01-CT-9012', t:'Tank Calibration & Certification', d:'Annual tank calibration chart + stamping', ven:'Karnataka Weighbridge & Calibration', inv:'KWC/26/117', ago:64, odo:95100, amt:12500, st:'Paid', next:301},
+  {v:'KA-03-EF-2210', t:'Brakes & Suspension', d:'Brake lining replacement all axles, air dryer serviced', ven:'Sri Balaji Motors, Hubballi', inv:'SBM/26/1184', ago:8, odo:167300, amt:41200, st:'Part-paid', next:-9},
+  {v:'KA-03-EF-2210', t:'Safety Equipment (hazmat)', d:'Fire extinguishers refilled, earthing strap + spark arrestor renewed', ven:'Safety First Fire Services, Hubballi', inv:'SFF/26/2290', ago:35, odo:164900, amt:8600, st:'Paid', next:330},
+  {v:'KA-09-GH-6634', t:'Accident Repair', d:'Front bumper, cabin door panel and headlamp assembly after minor collision', ven:'Sri Balaji Motors, Hubballi', inv:'SBM/26/1102', ago:19, odo:203400, amt:127000, st:'Unpaid', next:null},
+  {v:'KA-09-GH-6634', t:'Insurance', d:'Comprehensive hazmat goods-carriage policy renewal', ven:'New India Assurance, Belagavi', inv:'NIA/26/77431', ago:88, odo:198000, amt:184000, st:'Paid', next:277},
+  {v:'KA-02-MN-1187', t:'Engine & Transmission', d:'Clutch plate assembly + gearbox oil seal', ven:'Ashok Leyland Authorised, Belagavi', inv:'ALB/26/3120', ago:52, odo:221600, amt:78400, st:'Paid', next:null},
+  {v:'KA-02-MN-1187', t:'Statutory (FC / PUC / Permit)', d:'Fitness certificate renewal + emission test', ven:'RTO Belagavi', inv:'RTO/FC/26/9982', ago:41, odo:219800, amt:6200, st:'Paid', next:324},
+  {v:'KA-07-XY-3345', t:'Tanker Barrel & Manhole', d:'Barrel internal inspection, manhole gasket set replaced', ven:'Pragati Tanker Works, Bengaluru', inv:'PTW/26/0501', ago:3, odo:176500, amt:56800, st:'Unpaid', next:361},
+  {v:'KA-07-XY-3345', t:'Breakdown / Roadside', d:'Alternator failure on NH-4, roadside recovery + replacement', ven:'Highway Auto Electricals, Davanagere', inv:'HAE/26/0338', ago:27, odo:174100, amt:22400, st:'Paid', next:null},
+  {v:'KA-04-JK-7729', t:'Preventive Service', d:'20,000 km service — oil, air and fuel filters', ven:'Ashok Leyland Authorised, Belagavi', inv:'ALB/26/3402', ago:5, odo:88700, amt:16900, st:'Paid', next:11},
+  {v:'KA-08-PQ-5561', t:'Pump & Metering Unit', d:'Flow meter recalibration, pump seal kit', ven:'Pragati Tanker Works, Bengaluru', inv:'PTW/26/0488', ago:16, odo:134200, amt:29700, st:'Part-paid', next:198},
+  {v:'KA-08-PQ-5561', t:'Electrical & Battery', d:'2 × 12V batteries replaced, wiring harness repair', ven:'Highway Auto Electricals, Davanagere', inv:'HAE/26/0351', ago:9, odo:133800, amt:19800, st:'Paid', next:null},
+  {v:'KA-06-RS-8823', t:'Body & Cabin', d:'Cabin seat refurbishment, windscreen replacement', ven:'Sri Balaji Motors, Hubballi', inv:'SBM/26/1150', ago:31, odo:151900, amt:27300, st:'Paid', next:null}
+].forEach(s => maintenance.push({
+  id: 'MR-' + (++maintSeq),
+  vehicle: s.v, category: s.t, description: s.d, vendor: s.ven, invoiceNo: s.inv,
+  date: Date.now() - s.ago * DAY, odometer: s.odo,
+  amount: s.amt, gstPct: 18, status: s.st,
+  nextDue: s.next == null ? null : Date.now() + s.next * DAY,
+  billName: null, billUrl: null
+}));
+
+function initMaintForm(){
+  const vehOpts = VEHICLES.map(v => '<option>' + esc(v) + '</option>').join('');
+  const typeOpts = MAINT_TYPES.map(t => '<option>' + esc(t) + '</option>').join('');
+  $('m-vehicle').innerHTML = vehOpts;
+  $('m-type').innerHTML = typeOpts;
+  $('m-date').value = dateValue(Date.now());
+  $('fl-vehicle').innerHTML = '<option>All</option>' + vehOpts;
+  $('fl-type').innerHTML = '<option>All</option>' + typeOpts;
+}
+
+function saveMaintenance(){
+  const desc = $('m-desc').value.trim() || $('m-desc').placeholder;
+  const vendor = $('m-vendor').value.trim() || $('m-vendor').placeholder;
+  const invoice = $('m-invoice').value.trim() || $('m-invoice').placeholder;
+  const date = $('m-date').value;
+  const amount = parseFloat($('m-amount').value);
+  const gst = parseFloat($('m-gst').value);
+  const odo = $('m-odo').value === '' ? null : parseInt($('m-odo').value, 10);
+  const next = $('m-next').value;
+
+  if (!date) return showErr('maintErr', 'Service date is required.');
+  if (new Date(date).getTime() > Date.now() + DAY) return showErr('maintErr', 'Service date cannot be in the future.');
+  if (!(amount > 0)) return showErr('maintErr', 'Bill amount must be greater than zero.');
+  if (!(gst >= 0)) return showErr('maintErr', 'GST percentage cannot be negative.');
+  if (odo !== null && !(odo >= 0)) return showErr('maintErr', 'Odometer reading must be zero or more.');
+  if (next && new Date(next).getTime() < new Date(date).getTime()) {
+    return showErr('maintErr', 'Next service due cannot be before the service date.');
+  }
+
+  /* Every cost entry has to carry its own evidence — an unbacked bill is the
+     thing an auditor will pull on first. */
+  const file = $('m-bill').files[0];
+  if (!file){
+    $('m-bill').classList.add('missing');
+    return showErr('maintErr', 'Attach the bill or invoice file — a maintenance record cannot be saved without it.');
+  }
+  $('m-bill').classList.remove('missing');
+
+  const vehicle = $('m-vehicle').value;
+  const dupe = maintenance.find(r => r.vendor === vendor && r.invoiceNo === invoice);
+  if (dupe) return showErr('maintErr', 'Invoice ' + invoice + ' is already logged against ' + dupe.vehicle + ' (' + dupe.id + ').');
+
+  showErr('maintErr', '');
+  maintenance.push({
+    id: 'MR-' + (++maintSeq),
+    vehicle, category: $('m-type').value, description: desc, vendor, invoiceNo: invoice,
+    date: new Date(date).getTime(), odometer: odo,
+    amount, gstPct: gst, status: $('m-status').value,
+    nextDue: next ? new Date(next).getTime() : null,
+    billName: file.name,
+    billUrl: URL.createObjectURL(file)
+  });
+
+  ['m-desc','m-vendor','m-invoice','m-amount','m-odo','m-next'].forEach(id => $(id).value = '');
+  $('m-bill').value = '';
+  showBillPick();
+  persist();
+  renderWorkshop();
+  renderManager();
+}
+
+function showBillPick(){
+  const file = $('m-bill').files[0];
+  if (file) $('m-bill').classList.remove('missing');
+  $('billPick').innerHTML = file
+    ? '<span style="color:var(--green)">✓ ' + esc(file.name) + '</span> · ' + Math.max(1, Math.round(file.size/1024)) + ' KB'
+    : 'No file chosen yet.';
+}
+
+function filteredRecords(){
+  const veh = $('fl-vehicle').value, type = $('fl-type').value;
+  const status = $('fl-status').value, q = $('fl-q').value.trim().toLowerCase();
+  return maintenance
+    .filter(r => veh === 'All' || r.vehicle === veh)
+    .filter(r => type === 'All' || r.category === type)
+    .filter(r => status === 'All' || r.status === status)
+    .filter(r => !q || (r.vendor + ' ' + r.invoiceNo + ' ' + r.description).toLowerCase().includes(q))
+    .sort((a, b) => b.date - a.date);
+}
+
+function payPill(status){
+  const cls = {Paid:'p-green', Unpaid:'p-red', 'Part-paid':'p-amber'}[status];
+  return '<span class="pill ' + cls + '">' + status + '</span>';
+}
+
+function groupSum(keyFn){
+  const m = new Map();
+  maintenance.forEach(r => m.set(keyFn(r), (m.get(keyFn(r)) || 0) + recTotal(r)));
+  return [...m.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+function barRows(pairs, filterable){
+  const max = pairs.length ? pairs[0][1] : 0;
+  return pairs.map(([k, v]) =>
+    '<div class="barrow"' + (filterable ? ' data-vfilter="' + esc(k) + '"' : '') + '>' +
+      '<div class="barlab"><span>' + esc(k) + '</span><b>' + inr(v) + '</b></div>' +
+      '<div class="bartrack"><div class="barfill" style="width:' + (max ? (v / max * 100) : 0).toFixed(1) + '%"></div></div>' +
+    '</div>').join('');
+}
+
+function renderWorkshop(){
+  const total = maintenance.reduce((n, r) => n + recTotal(r), 0);
+  const last30 = maintenance.filter(r => r.date >= Date.now() - 30*DAY).reduce((n, r) => n + recTotal(r), 0);
+  const owed = maintenance.filter(r => r.status !== 'Paid').reduce((n, r) => n + recTotal(r), 0);
+  const owedCount = maintenance.filter(r => r.status !== 'Paid').length;
+  const gst = maintenance.reduce((n, r) => n + recGst(r), 0);
+  const vehiclesServiced = new Set(maintenance.map(r => r.vehicle)).size;
+  const dueSoon = maintenance.filter(r => r.nextDue && r.nextDue <= Date.now() + 30*DAY).length;
+
+  $('costStats').innerHTML = [
+    ['Total Spend', inr(total), 'a'],
+    ['Last 30 Days', inr(last30), ''],
+    ['Outstanding', inr(owed), owed ? 'r' : 'g'],
+    ['Unpaid Bills', owedCount, owedCount ? 'r' : 'g'],
+    ['GST Input Credit', inr(gst), ''],
+    ['Avg / Vehicle', inr(vehiclesServiced ? total / vehiclesServiced : 0), ''],
+    ['Bills Logged', maintenance.length, ''],
+    ['Due in 30 Days', dueSoon, dueSoon ? 'a' : 'g']
+  ].map(([k, v, cls]) =>
+    '<div class="stat"><div class="k">' + k + '</div><div class="v ' + cls + '" style="font-size:14px">' + v + '</div></div>'
+  ).join('');
+
+  $('byType').innerHTML = maintenance.length
+    ? barRows(groupSum(r => r.category), false)
+    : '<div class="empty">No records yet.</div>';
+  $('byVehicle').innerHTML = maintenance.length
+    ? barRows(groupSum(r => r.vehicle), true)
+    : '<div class="empty">No records yet.</div>';
+
+  document.querySelectorAll('[data-vfilter]').forEach(el => el.addEventListener('click', () => {
+    $('fl-vehicle').value = el.dataset.vfilter;
+    renderLedger();
+    $('ledger').scrollIntoView({behavior:'smooth', block:'center'});
+  }));
+
+  const due = maintenance.filter(r => r.nextDue).sort((a, b) => a.nextDue - b.nextDue).slice(0, 8);
+  $('dueList').innerHTML = due.length === 0
+    ? '<div class="empty">No next-service dates recorded.</div>'
+    : due.map(r => {
+        const days = Math.round((r.nextDue - Date.now()) / DAY);
+        const overdue = days < 0;
+        return '<div class="flagline">' +
+          (overdue ? '<b>Overdue ' + Math.abs(days) + 'd</b>' : '<span style="color:var(--' + (days <= 30 ? 'amber' : 'dim') + ')">in ' + days + 'd</span>') +
+          ' — ' + esc(r.vehicle) + ' · ' + esc(r.category) + ' <span style="color:var(--faint)">(' + fmtDate(r.nextDue) + ')</span></div>';
+      }).join('');
+
+  renderLedger();
+}
+
+function renderLedger(){
+  const rows = filteredRecords();
+  const shown = rows.reduce((n, r) => n + recTotal(r), 0);
+
+  $('ledger').innerHTML = rows.length === 0
+    ? '<div class="empty">No records match these filters.</div>'
+    : '<table><thead><tr><th>Date</th><th>Vehicle</th><th>Type</th><th>Vendor</th><th>Invoice</th>' +
+      '<th class="money">Total</th><th>Payment</th></tr></thead><tbody>' +
+      rows.map(r =>
+        '<tr class="clickable" data-rec="' + esc(r.id) + '">' +
+        '<td>' + fmtDate(r.date) + '</td>' +
+        '<td class="strong">' + esc(r.vehicle) + '</td>' +
+        '<td>' + esc(r.category) + '</td>' +
+        '<td>' + esc(r.vendor) + '</td>' +
+        '<td>' + esc(r.invoiceNo) + (r.billUrl ? ' 📎' : '') + '</td>' +
+        '<td class="money">' + inr(recTotal(r)) + '</td>' +
+        '<td>' + payPill(r.status) + '</td></tr>'
+      ).join('') +
+      '</tbody></table>' +
+      '<p class="note">' + rows.length + ' record(s) shown · ' + inr(shown) + ' including GST. Click a row for the full bill.</p>';
+
+  document.querySelectorAll('[data-rec]').forEach(row =>
+    row.addEventListener('click', () => openBill(row.dataset.rec)));
+}
+
+function openBill(id){
+  const r = maintenance.find(x => x.id === id);
+  const trip = [...trips.values()].filter(t => t.vehicle === r.vehicle).length;
+
+  $('modalBody').innerHTML =
+    '<div class="card-head"><h2>' + esc(r.id) + ' — ' + esc(r.vehicle) + '</h2>' +
+      '<button class="ghost slim" id="btn-closemodal">Close</button></div>' +
+    '<div class="card-body">' +
+      '<div class="stats">' +
+        '<div class="stat"><div class="k">Type</div><div class="v" style="font-size:12px">' + esc(r.category) + '</div></div>' +
+        '<div class="stat"><div class="k">Service Date</div><div class="v" style="font-size:12px">' + fmtDate(r.date) + '</div></div>' +
+        '<div class="stat"><div class="k">Odometer</div><div class="v" style="font-size:13px">' +
+          (r.odometer == null ? '—' : r.odometer.toLocaleString('en-IN') + ' km') + '</div></div>' +
+        '<div class="stat"><div class="k">Payment</div><div class="v" style="font-size:12px">' + esc(r.status) + '</div></div>' +
+        '<div class="stat"><div class="k">Next Due</div><div class="v" style="font-size:12px">' +
+          (r.nextDue ? fmtDate(r.nextDue) : '—') + '</div></div>' +
+      '</div>' +
+
+      '<div class="divider"></div>' +
+      '<div class="card-head" style="padding:0 0 10px;border:none"><h2>Work Carried Out</h2></div>' +
+      '<p style="font-size:12.5px;color:var(--dim)">' + esc(r.description) + '</p>' +
+      '<p class="note">Vendor: ' + esc(r.vendor) + ' · Invoice ' + esc(r.invoiceNo) + '</p>' +
+
+      '<div class="divider"></div>' +
+      '<div class="card-head" style="padding:0 0 10px;border:none"><h2>Bill Breakdown</h2></div>' +
+      '<table><tbody>' +
+        '<tr><td>Taxable amount</td><td class="money">' + inr(r.amount) + '</td></tr>' +
+        '<tr><td>GST @ ' + r.gstPct + '%</td><td class="money">' + inr(recGst(r)) + '</td></tr>' +
+        '<tr><td class="strong">Invoice total</td><td class="money" style="color:var(--amber)">' + inr(recTotal(r)) + '</td></tr>' +
+      '</tbody></table>' +
+
+      '<div class="divider"></div>' +
+      '<div class="card-head" style="padding:0 0 10px;border:none"><h2>Attached Bill</h2></div>' +
+      (r.billUrl
+        ? '<p style="font-size:12.5px"><a class="billlink" href="' + r.billUrl + '" target="_blank" rel="noopener">Open ' + esc(r.billName) + '</a></p>'
+        : '<div class="empty">No file attached — paper bill held at depot.</div>') +
+      '<p class="note">' + esc(r.vehicle) + ' has ' + trip + ' trip(s) on record this session.</p>' +
+    '</div>';
+
+  $('modalWrap').classList.add('open');
+  $('btn-closemodal').addEventListener('click', () => $('modalWrap').classList.remove('open'));
+}
+
+function exportCsv(){
+  const rows = filteredRecords();
+  if (rows.length === 0) return;
+  const cell = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const csv = [
+    ['Record ID','Date','Vehicle','Type','Description','Vendor','Invoice No','Odometer (km)','Taxable (INR)','GST %','GST (INR)','Total (INR)','Payment Status','Next Due'].map(cell).join(','),
+    ...rows.map(r => [
+      r.id, dateValue(r.date), r.vehicle, r.category, r.description, r.vendor, r.invoiceNo,
+      r.odometer ?? '', r.amount.toFixed(2), r.gstPct, recGst(r).toFixed(2), recTotal(r).toFixed(2),
+      r.status, r.nextDue ? dateValue(r.nextDue) : ''
+    ].map(cell).join(','))
+  ].join('\r\n');
+
+  const url = URL.createObjectURL(new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8;'}));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'tankertrack-maintenance-' + dateValue(Date.now()) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ---------------- fuel, distance & mileage ----------------
+   Two kinds of entry share one log: a plain odometer reading taken every few
+   days, and a refill which also carries litres and rate. Distance comes from
+   the odometer; consumption only from refills. */
+
+const fuelLog = [];
+let fuelSeq = 2000;
+
+const litresOf = e => e.kind === 'refill' ? e.litres : 0;
+const fuelCostOf = e => e.kind === 'refill' ? e.litres * e.ratePerLitre : 0;
+const km = n => Math.round(n).toLocaleString('en-IN') + ' km';
+
+/* Deterministic so the seeded history does not reshuffle on every refresh. */
+function mulberry32(seed){
+  return function(){
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* Placeholder history: 45 days of running for six trucks. Replace with the
+   real fuel-card and odometer feed when the depot data is imported.
+
+   Litres are derived from a per-truck true consumption figure so the seeded
+   history is internally consistent — the tank-to-tank calculation below should
+   recover each truck's kmpl almost exactly, which makes the maths checkable. */
+(function seedFuelLog(){
+  const fleet = [
+    {v:'KA-05-AB-4471', odo:142880, kmpl:4.20},
+    {v:'KA-01-CT-9012', odo: 98450, kmpl:3.95},
+    {v:'KA-03-EF-2210', odo:167300, kmpl:3.35},  // running poorly — shows in the table
+    {v:'KA-09-GH-6634', odo:203400, kmpl:4.05},
+    {v:'KA-02-MN-1187', odo:221600, kmpl:4.45},
+    {v:'KA-08-PQ-5561', odo:134200, kmpl:4.10}
+  ];
+  const STATIONS = ['IOC, Dharwad bypass', 'HP, Belagavi Ring Road', 'BPCL, NH-4 Km 188',
+                    'Nayara, Tumakuru Road', 'IOC, Hubballi Depot'];
+  const rand = mulberry32(20260721);
+  const DAYS = 45;
+
+  const refill = (truck, odo, daysAgo, litres, isFull) => ({
+    id: 'FL-' + (++fuelSeq),
+    vehicle: truck.v,
+    kind: 'refill',
+    date: Date.now() - daysAgo * DAY,
+    odometer: odo,
+    litres: Math.round(litres * 100) / 100,
+    ratePerLitre: Math.round((88 + rand() * 8) * 100) / 100,
+    isFullTank: isFull,
+    station: STATIONS[Math.floor(rand() * STATIONS.length)]
+  });
+
+  fleet.forEach((truck) => {
+    let odo = truck.odo;
+    let odoLastFull = odo;        // where the current measurable span opened
+    let litresSinceFull = 0;      // part fills carried into the next full tank
+    let kmSinceRefill = 0;
+    let daysSinceReading = 0;
+
+    // Opening full tank. Its litres belong to the previous span, so the
+    // measurement only starts from the next fill.
+    fuelLog.push(refill(truck, odo, DAYS, 300, true));
+
+    for (let day = DAYS - 1; day >= 0; day--) {
+      const distance = rand() < 0.2 ? 0 : 200 + Math.round(rand() * 120);
+      odo += distance;
+      kmSinceRefill += distance;
+      daysSinceReading++;
+
+      if (kmSinceRefill >= 1150 + rand() * 200) {
+        // What it would take to bring the tank back to full right now.
+        const needed = (odo - odoLastFull) / truck.kmpl - litresSinceFull;
+        const partFill = rand() < 0.2;
+        const litres = partFill ? needed * (0.4 + rand() * 0.2) : needed;
+
+        fuelLog.push(refill(truck, odo, day, litres, !partFill));
+
+        if (partFill) {
+          litresSinceFull += litres;
+        } else {
+          odoLastFull = odo;
+          litresSinceFull = 0;
+        }
+        kmSinceRefill = 0;
+        daysSinceReading = 0;
+      } else if (daysSinceReading >= 3) {
+        fuelLog.push({
+          id: 'FL-' + (++fuelSeq), vehicle: truck.v, kind: 'reading',
+          date: Date.now() - day * DAY, odometer: odo
+        });
+        daysSinceReading = 0;
+      }
+    }
+  });
+})();
+
+/**
+ * Tank-to-tank mileage. A span runs between two full-tank fills; the litres
+ * counted are everything added after the opening fill up to and including the
+ * closing one, so part fills fold into the next complete span instead of
+ * producing a nonsense figure of their own.
+ */
+function vehicleFuelStats(vehicle){
+  const entries = fuelLog.filter(e => e.vehicle === vehicle)
+                         .sort((a, b) => a.odometer - b.odometer);
+  if (entries.length === 0) return null;
+
+  const refills = entries.filter(e => e.kind === 'refill');
+  let openIdx = refills.findIndex(r => r.isFullTank);
+  let measuredKm = 0, measuredLitres = 0, carried = 0;
+
+  if (openIdx >= 0){
+    for (let i = openIdx + 1; i < refills.length; i++){
+      carried += refills[i].litres;
+      if (refills[i].isFullTank){
+        const span = refills[i].odometer - refills[openIdx].odometer;
+        if (span > 0 && carried > 0){ measuredKm += span; measuredLitres += carried; }
+        openIdx = i;
+        carried = 0;
+      }
+    }
+  }
+
+  const first = entries[0], last = entries[entries.length - 1];
+  const spanKm = last.odometer - first.odometer;
+  const totalLitres = entries.reduce((n, e) => n + litresOf(e), 0);
+  const totalCost = entries.reduce((n, e) => n + fuelCostOf(e), 0);
+
+  return {
+    vehicle,
+    entries: entries.length,
+    lastOdometer: last.odometer,
+    lastEntryAt: Math.max(...entries.map(e => e.date)),
+    spanKm,
+    measuredKm,
+    measuredLitres,
+    totalLitres,
+    totalCost,
+    kmPerLitre: measuredLitres > 0 ? measuredKm / measuredLitres : null,
+    costPerKm: spanKm > 0 ? totalCost / spanKm : null
+  };
+}
+
+function allFuelStats(){
+  return [...new Set(fuelLog.map(e => e.vehicle))]
+    .map(vehicleFuelStats)
+    .filter(Boolean)
+    .sort((a, b) => (a.kmPerLitre ?? 99) - (b.kmPerLitre ?? 99));
+}
+
+function fleetMileage(stats){
+  const km = stats.reduce((n, s) => n + s.measuredKm, 0);
+  const litres = stats.reduce((n, s) => n + s.measuredLitres, 0);
+  return litres > 0 ? km / litres : null;
+}
+
+function initFuelForm(){
+  const opts = VEHICLES.map(v => '<option>' + esc(v) + '</option>').join('');
+  $('fu-vehicle').innerHTML = opts;
+  $('fl-fuel-vehicle').innerHTML = '<option>All</option>' + opts;
+  $('fu-date').value = dateValue(Date.now());
+  syncFuelKind();
+}
+
+function syncFuelKind(){
+  const isRefill = $('fu-kind').value === 'refill';
+  $('fuelOnly').style.display = isRefill ? '' : 'none';
+  updateFuelTotal();
+}
+
+function updateFuelTotal(){
+  const litres = parseFloat($('fu-litres').value);
+  const rate = parseFloat($('fu-rate').value);
+  $('fuelTotal').innerHTML = (litres > 0 && rate > 0)
+    ? 'Bill total: <b style="color:var(--amber);font-family:var(--f-mono)">' + inr(litres * rate) + '</b>'
+    : '';
+}
+
+function saveFuelEntry(){
+  const vehicle = $('fu-vehicle').value;
+  const kind = $('fu-kind').value;
+  const date = $('fu-date').value;
+  const odo = parseInt($('fu-odo').value, 10);
+
+  if (!date) return showErr('fuelErr', 'Date is required.');
+  if (new Date(date).getTime() > Date.now() + DAY) return showErr('fuelErr', 'Date cannot be in the future.');
+  if (!Number.isInteger(odo) || odo < 0) return showErr('fuelErr', 'Enter the odometer reading in whole kilometres.');
+
+  /* An odometer only counts up. A reading below the last one is a typo or a
+     swapped vehicle, and silently accepting it corrupts every later mileage. */
+  const previous = fuelLog.filter(e => e.vehicle === vehicle)
+                          .sort((a, b) => b.odometer - a.odometer)[0];
+  if (previous && odo < previous.odometer){
+    return showErr('fuelErr', 'Odometer went backwards — ' + vehicle + ' was last recorded at '
+      + previous.odometer.toLocaleString('en-IN') + ' km on ' + fmtDate(previous.date) + '.');
+  }
+
+  const entry = {
+    id: 'FL-' + (++fuelSeq), vehicle, kind,
+    date: new Date(date).getTime(), odometer: odo
+  };
+
+  if (kind === 'refill'){
+    const litres = parseFloat($('fu-litres').value);
+    const rate = parseFloat($('fu-rate').value);
+    if (!(litres > 0)) return showErr('fuelErr', 'Litres filled must be greater than zero.');
+    if (!(rate > 0)) return showErr('fuelErr', 'Rate per litre must be greater than zero.');
+    entry.litres = litres;
+    entry.ratePerLitre = rate;
+    entry.isFullTank = $('fu-full').value === 'yes';
+    entry.station = $('fu-station').value.trim() || $('fu-station').placeholder;
+  }
+
+  showErr('fuelErr', '');
+  fuelLog.push(entry);
+  ['fu-odo','fu-litres','fu-rate','fu-station'].forEach(id => $(id).value = '');
+  updateFuelTotal();
+  persist();
+  renderFuel();
+  renderWorkshop();
+}
+
+function renderFuel(){
+  const stats = allFuelStats();
+  const fleetKmpl = fleetMileage(stats);
+  const fuelSpend = fuelLog.reduce((n, e) => n + fuelCostOf(e), 0);
+  const litres = fuelLog.reduce((n, e) => n + litresOf(e), 0);
+  const distance = stats.reduce((n, s) => n + s.spanKm, 0);
+  const workshopSpend = maintenance.reduce((n, r) => n + recTotal(r), 0);
+
+  $('fuelStats').innerHTML = [
+    ['Distance Covered', km(distance), ''],
+    ['Fuel Spend', inr(fuelSpend), 'a'],
+    ['Diesel Used', Math.round(litres).toLocaleString('en-IN') + ' L', ''],
+    ['Fleet Mileage', fleetKmpl ? fleetKmpl.toFixed(2) + ' km/L' : '—', 'g'],
+    ['Fuel Cost / km', distance ? inr(fuelSpend / distance) : '—', ''],
+    ['Workshop Spend', inr(workshopSpend), ''],
+    ['Total Running Cost', inr(fuelSpend + workshopSpend), 'a'],
+    ['Running Cost / km', distance ? inr((fuelSpend + workshopSpend) / distance) : '—', 'a']
+  ].map(([k, v, cls]) =>
+    '<div class="stat"><div class="k">' + k + '</div><div class="v ' + cls + '" style="font-size:14px">' + v + '</div></div>'
+  ).join('');
+
+  $('mileageTable').innerHTML = stats.length === 0
+    ? '<div class="empty">No fuel entries yet.</div>'
+    : '<table><thead><tr><th>Vehicle</th><th class="money">Last Odo</th><th class="money">Distance</th>' +
+      '<th class="money">Diesel</th><th class="money">Mileage</th><th class="money">₹/km</th></tr></thead><tbody>' +
+      stats.map(s => {
+        let badge = '';
+        if (s.kmPerLitre != null && fleetKmpl){
+          const pct = (s.kmPerLitre - fleetKmpl) / fleetKmpl * 100;
+          badge = ' <span class="delta ' + (pct < -5 ? 'bad' : 'good') + '">'
+                + (pct >= 0 ? '+' : '') + pct.toFixed(0) + '%</span>';
+        }
+        return '<tr><td class="strong">' + esc(s.vehicle) + '</td>' +
+          '<td class="money">' + s.lastOdometer.toLocaleString('en-IN') + '</td>' +
+          '<td class="money">' + km(s.spanKm) + '</td>' +
+          '<td class="money">' + Math.round(s.totalLitres).toLocaleString('en-IN') + ' L</td>' +
+          '<td class="money">' + (s.kmPerLitre ? s.kmPerLitre.toFixed(2) : '—') + badge + '</td>' +
+          '<td class="money">' + (s.costPerKm ? inr(s.costPerKm) : '—') + '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<p class="note">Mileage is measured over ' +
+      km(stats.reduce((n, s) => n + s.measuredKm, 0)) +
+      ' of full-tank-to-full-tank running. A truck more than 5% below the fleet average is worth ' +
+      'checking — that gap is usually a fuel leak, a tired engine, or pilferage.</p>';
+
+  renderFuelLedger();
+}
+
+function filteredFuel(){
+  const veh = $('fl-fuel-vehicle').value;
+  const kind = $('fl-fuel-kind').value.toLowerCase();
+  return fuelLog
+    .filter(e => veh === 'All' || e.vehicle === veh)
+    .filter(e => kind === 'all' || e.kind === kind)
+    .sort((a, b) => b.date - a.date || b.odometer - a.odometer);
+}
+
+function renderFuelLedger(){
+  const rows = filteredFuel();
+  const shown = rows.slice(0, 25);
+
+  $('fuelLedger').innerHTML = rows.length === 0
+    ? '<div class="empty">No entries match these filters.</div>'
+    : '<table><thead><tr><th>Date</th><th>Vehicle</th><th>Type</th><th class="money">Odometer</th>' +
+      '<th class="money">Litres</th><th class="money">Rate</th><th class="money">Cost</th></tr></thead><tbody>' +
+      shown.map(e =>
+        '<tr><td>' + fmtDate(e.date) + '</td>' +
+        '<td class="strong">' + esc(e.vehicle) + '</td>' +
+        '<td>' + (e.kind === 'refill'
+          ? '<span class="pill ' + (e.isFullTank ? 'p-green' : 'p-amber') + '">' +
+            (e.isFullTank ? 'Full tank' : 'Part fill') + '</span>'
+          : '<span class="pill p-grey">Reading</span>') + '</td>' +
+        '<td class="money">' + e.odometer.toLocaleString('en-IN') + '</td>' +
+        '<td class="money">' + (e.kind === 'refill' ? e.litres.toFixed(2) : '—') + '</td>' +
+        '<td class="money">' + (e.kind === 'refill' ? '₹' + e.ratePerLitre.toFixed(2) : '—') + '</td>' +
+        '<td class="money">' + (e.kind === 'refill' ? inr(fuelCostOf(e)) : '—') + '</td></tr>'
+      ).join('') + '</tbody></table>' +
+      '<p class="note">Showing ' + shown.length + ' of ' + rows.length + ' entries · ' +
+      inr(rows.reduce((n, e) => n + fuelCostOf(e), 0)) + ' of fuel in this selection.</p>';
+}
+
+function exportFuelCsv(){
+  const rows = filteredFuel();
+  if (rows.length === 0) return;
+  const cell = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const csv = [
+    ['Entry ID','Date','Vehicle','Entry Type','Odometer (km)','Litres','Rate (INR/L)',
+     'Cost (INR)','Tank','Station'].map(cell).join(','),
+    ...rows.map(e => [
+      e.id, dateValue(e.date), e.vehicle, e.kind, e.odometer,
+      e.kind === 'refill' ? e.litres.toFixed(2) : '',
+      e.kind === 'refill' ? e.ratePerLitre.toFixed(2) : '',
+      e.kind === 'refill' ? fuelCostOf(e).toFixed(2) : '',
+      e.kind === 'refill' ? (e.isFullTank ? 'full' : 'part') : '',
+      e.station ?? ''
+    ].map(cell).join(','))
+  ].join('\r\n');
+
+  const url = URL.createObjectURL(new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8;'}));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'tankertrack-fuel-' + dateValue(Date.now()) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ---------------- wiring ---------------- */
+const viewTabs = [...document.querySelectorAll('.tab[data-view]')];
+viewTabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    const i = Number(tab.dataset.view);
+    viewTabs.forEach(el => el.classList.toggle('active', Number(el.dataset.view) === i));
+    document.querySelectorAll('.view').forEach((el, idx) => el.classList.toggle('active', idx === i));
+  });
+});
+$('btn-schedule').addEventListener('click', scheduleTrip);
+$('modalWrap').addEventListener('click', e => { if (e.target === $('modalWrap')) $('modalWrap').classList.remove('open'); });
+
+$('btn-maint').addEventListener('click', saveMaintenance);
+$('m-bill').addEventListener('change', showBillPick);
+$('btn-csv').addEventListener('click', exportCsv);
+['fl-vehicle','fl-type','fl-status'].forEach(id => $(id).addEventListener('change', renderLedger));
+$('fl-q').addEventListener('input', renderLedger);
+
+$('btn-fuel').addEventListener('click', saveFuelEntry);
+$('btn-fuel-csv').addEventListener('click', exportFuelCsv);
+$('fu-kind').addEventListener('change', syncFuelKind);
+['fu-litres','fu-rate'].forEach(id => $(id).addEventListener('input', updateFuelTotal));
+['fl-fuel-vehicle','fl-fuel-kind'].forEach(id => $(id).addEventListener('change', renderFuelLedger));
+
+/* Overlay any saved store (survives refresh, and picks up trips the driver app
+   has completed); otherwise persist the freshly-seeded data as the baseline. */
+const savedState = TankerStore.load();
+if (savedState) hydrate(savedState); else persist();
+
+/* When the driver app writes in another tab, refresh the manager live. */
+TankerStore.onExternalChange(s => {
+  hydrate(s);
+  renderManager(); renderWorkshop(); renderFuel();
+});
+
+initForm();
+initMaintForm();
+initFuelForm();
+showBillPick();
+renderWorkshop();
+renderFuel();
+renderManager();
+</script>
+</body>
+</html>

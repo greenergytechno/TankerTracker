@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TankerTrack Driver</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700&display=swap');
+
+  :root{
+    --bg:#0C1310; --panel:#111A16; --panel-2:#16211C;
+    --cream:#EFE9DC; --dim:#9BAAA2; --faint:#5C6E66;
+    --amber:#F0A93E; --green:#5FD37B; --red:#E2472B;
+    --stroke:rgba(240,233,220,.1); --stroke-2:rgba(240,233,220,.18);
+    --f-display:'Bebas Neue',sans-serif; --f-body:'Inter',sans-serif; --f-mono:'Space Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#050807;color:var(--cream);font-family:var(--f-body);line-height:1.45;
+    min-height:100vh;display:flex;justify-content:center;}
+
+  /* Phone frame on desktop; full-bleed on a real phone. */
+  .phone{width:100%;max-width:430px;min-height:100vh;background:var(--bg);
+    display:flex;flex-direction:column;position:relative;
+    box-shadow:0 0 0 1px var(--stroke-2), 0 30px 80px rgba(0,0,0,.6);}
+  @media(min-width:480px){ .phone{margin:24px 0;min-height:calc(100vh - 48px);border-radius:26px;overflow:hidden;} }
+
+  .appbar{display:flex;align-items:center;gap:11px;padding:16px 18px;
+    border-bottom:1px solid var(--stroke);position:sticky;top:0;background:var(--bg);z-index:5;}
+  .mark{width:34px;height:34px;border-radius:8px;background:rgba(240,169,62,.14);border:1px solid rgba(240,169,62,.3);
+    display:flex;align-items:center;justify-content:center;font-family:var(--f-display);color:var(--amber);font-size:15px;}
+  .appbar h1{font-family:var(--f-display);font-size:19px;letter-spacing:.03em;line-height:1;}
+  .appbar p{font-size:8.5px;color:var(--faint);letter-spacing:.11em;text-transform:uppercase;font-family:var(--f-mono);margin-top:2px;}
+  .who{margin-left:auto;text-align:right;font-family:var(--f-mono);font-size:9.5px;color:var(--dim);}
+
+  main{flex:1;padding:18px;overflow-y:auto;}
+  .stack > * + *{margin-top:14px;}
+
+  .card{background:var(--panel);border:1px solid var(--stroke);border-radius:12px;overflow:hidden;}
+  .card-body{padding:16px;}
+  .card h2{font-family:var(--f-display);font-size:17px;letter-spacing:.04em;color:var(--cream);margin-bottom:3px;}
+  .card .sub{font-size:11px;color:var(--faint);font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;}
+
+  label{display:block;font-family:var(--f-mono);font-size:10px;text-transform:uppercase;letter-spacing:.07em;
+    color:var(--dim);margin:0 0 6px;}
+  input,select{width:100%;background:var(--panel-2);border:1px solid var(--stroke-2);border-radius:9px;
+    color:var(--cream);font-family:var(--f-body);font-size:16px;padding:13px 13px;}
+  input:focus,select:focus{outline:none;border-color:var(--amber);}
+  .field + .field{margin-top:13px;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:11px;}
+  .req{color:var(--amber);font-family:var(--f-body);text-transform:none;letter-spacing:0;}
+  ::placeholder{color:var(--faint);}
+  input[type=file]{font-size:12px;padding:9px;font-family:var(--f-mono);}
+  input[type=file]::file-selector-button{background:var(--panel);color:var(--dim);border:1px solid var(--stroke-2);
+    border-radius:6px;padding:7px 11px;margin-right:10px;font-family:var(--f-mono);font-size:11px;cursor:pointer;}
+
+  button.act{width:100%;background:var(--amber);color:#1a1206;border:none;border-radius:10px;
+    font-family:var(--f-display);letter-spacing:.05em;font-size:19px;padding:15px;margin-top:16px;cursor:pointer;}
+  button.act:active{transform:translateY(1px);}
+  button.act.danger{background:var(--red);color:#fff;}
+  button.ghost{background:var(--panel-2);border:1px solid var(--stroke-2);color:var(--dim);
+    border-radius:9px;padding:11px;font-family:var(--f-body);font-size:14px;cursor:pointer;width:100%;margin-top:12px;}
+  button.slim{width:auto;padding:6px 11px;font-size:12px;margin:0;}
+
+  .pill{display:inline-block;font-family:var(--f-mono);font-size:10px;padding:3px 9px;border-radius:20px;}
+  .p-amber{background:rgba(240,169,62,.14);color:var(--amber);}
+  .p-green{background:rgba(95,211,123,.14);color:var(--green);}
+  .p-red{background:rgba(226,71,43,.14);color:var(--red);}
+  .p-grey{background:rgba(240,233,220,.08);color:var(--dim);}
+
+  .kv{display:grid;grid-template-columns:repeat(2,1fr);gap:11px;}
+  .kv > div{background:var(--panel-2);border:1px solid var(--stroke);border-radius:9px;padding:10px 11px;}
+  .kv .k{font-family:var(--f-mono);font-size:8.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);}
+  .kv .v{font-size:14px;margin-top:3px;color:var(--cream);}
+  .kv .v.a{color:var(--amber);} .kv .v.g{color:var(--green);} .kv .v.r{color:var(--red);}
+
+  .hd{display:flex;justify-content:space-between;align-items:baseline;margin:2px 0 10px;}
+  .listrow{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;
+    padding:10px 0;border-top:1px solid var(--stroke);font-size:13px;}
+  .listrow:first-of-type{border-top:none;}
+  .listrow .meta{font-size:11px;color:var(--faint);margin-top:2px;}
+  .money{font-family:var(--f-mono);white-space:nowrap;}
+  .empty{color:var(--faint);text-align:center;font-size:13px;padding:16px 0;}
+  .note{font-size:11.5px;color:var(--faint);margin-top:12px;line-height:1.5;}
+  .err{background:rgba(226,71,43,.12);border:1px solid rgba(226,71,43,.4);color:#ffb3a3;
+    border-radius:9px;padding:10px 12px;font-size:12.5px;margin-bottom:12px;}
+  .divider{height:1px;background:var(--stroke);margin:15px 0;}
+  a.lnk{color:var(--amber);text-decoration:none;border-bottom:1px dotted rgba(240,169,62,.5);}
+  .balancebar{display:flex;justify-content:space-between;align-items:center;
+    background:var(--panel-2);border:1px solid var(--stroke-2);border-radius:10px;padding:12px 14px;}
+  .balancebar .amt{font-family:var(--f-mono);font-size:18px;}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="appbar">
+    <div class="mark">TT</div>
+    <div>
+      <h1>TankerTrack</h1>
+      <p>Driver · In-Cab</p>
+    </div>
+    <div class="who" id="who">not signed in</div>
+  </div>
+  <main id="screen"><div class="stack"></div></main>
+</div>
+
+<script src="store.js"></script>
+<script>
+/* ============================================================================
+   Driver app — a standalone client. Reads and writes the SAME shared store as
+   the manager website (see store.js). A trip dispatch schedules on the website
+   shows up here by its Trip ID; everything the driver logs here shows up on the
+   website. Persistence is localStorage today; it is the seam where real API
+   calls replace TankerStore later.
+   ========================================================================== */
+
+const STOP_TYPES = ['Scheduled', 'Fuel', 'Break', 'Unscheduled'];
+const EXPENSE_HEADS = ['Food', 'Parking', 'Unloading', 'RTO Charges'];
+const EXPENSE_EXTRAS = ['Toll', 'Fine', 'Repair', 'Loading', 'Weighbridge', 'Other'];
+const DAY = 86400000;
+
+/* ---------------- shared store ---------------- */
+let DB = TankerStore.load() || { trips: [], fuelLog: [], maintenance: [], seqs: { tripSeq: 4820, maintSeq: 1000, fuelSeq: 2000 } };
+let currentId = null;
+let errMsg = '';
+
+function saveDB(){ TankerStore.save(DB); }
+const trip = () => DB.trips.find(t => t.id === currentId) || null;
+
+/* When the manager schedules/updates in another tab, pick it up live. */
+TankerStore.onExternalChange(s => { DB = s; render(); });
+
+/* ---------------- helpers ---------------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const inr = n => '₹' + Math.round(n).toLocaleString('en-IN');
+const kmv = n => Number(n).toLocaleString('en-IN');
+const fmtDate = ms => new Date(ms).toLocaleDateString([], {day:'2-digit', month:'short', year:'numeric'});
+const fmtClock = ms => new Date(ms).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+const fmtTime = ms => fmtDate(ms) + ', ' + fmtClock(ms);
+const dateValue = ms => new Date(ms - new Date(ms).getTimezoneOffset()*60000).toISOString().slice(0,10);
+const localNowValue = () => { const d=new Date(); return new Date(d - d.getTimezoneOffset()*60000).toISOString().slice(0,16); };
+
+/* Highest odometer on file for a vehicle — from fuel readings or past trips.
+   Same cross-source check the manager does, so the two can't contradict. */
+function lastKnownOdometer(vehicle){
+  let best = null;
+  const consider = (v, when, src) => {
+    if (typeof v === 'number' && !Number.isNaN(v) && (!best || v > best.km)) best = {km:v, when, src};
+  };
+  DB.fuelLog.forEach(e => { if (e.vehicle === vehicle) consider(e.odometer, e.date, 'fuel log'); });
+  DB.trips.forEach(t => {
+    if (t.vehicle !== vehicle) return;
+    consider(t.openingOdometer, t.departure && t.departure.time, t.id);
+    consider(t.closingOdometer, t.arrival && t.arrival.time, t.id);
+  });
+  return best;
+}
+
+/* Server-side rule in the prototype: unscheduled, or over the stop limit. */
+function classifyStops(t){
+  let counted = 0;
+  return t.stops.map(s => {
+    counted++;
+    const reasons = [];
+    if (s.type === 'Unscheduled') reasons.push('Marked unscheduled / off-route');
+    if (counted > t.maxStops) reasons.push('Over the ' + t.maxStops + '-stop limit');
+    return { ...s, unauthorized: reasons.length > 0, reasons };
+  });
+}
+
+const expenseTotal = t => t.expenses.reduce((n, e) => n + e.amount, 0);
+function settlement(t){
+  const total = expenseTotal(t), advance = t.advance || 0;
+  return { total, advance, balance: total - advance };
+}
+const distanceOf = t => (t.openingOdometer != null && t.closingOdometer != null) ? t.closingOdometer - t.openingOdometer : null;
+const mileageOf = t => { const d = distanceOf(t); return (d != null && t.dieselLitres > 0) ? d / t.dieselLitres : null; };
+
+function setErr(m){ errMsg = m || ''; render(); }
+
+/* ---------------- render ---------------- */
+function render(){
+  const t = trip();
+  let html;
+  if (!t) html = lookupScreen();
+  else if (t.status === 'scheduled') html = departScreen(t);
+  else if (t.status === 'active') html = activeScreen(t);
+  else html = completedScreen(t);
+
+  $('screen').innerHTML = '<div class="stack">' + html + '</div>';
+  $('who').textContent = t ? esc(t.driver) : 'enter a Trip ID';
+  wire(t);
+}
+
+function errBlock(){ return errMsg ? '<div class="err">' + esc(errMsg) + '</div>' : ''; }
+
+function lookupScreen(){
+  const mine = DB.trips.filter(t => t.status !== 'completed');
+  return '<div class="card"><div class="card-body">' +
+    '<h2>Open Your Trip</h2><div class="sub">enter the ID dispatch gave you</div>' +
+    '<div style="margin-top:14px">' + errBlock() +
+      '<label>Trip ID</label><input id="tripid" placeholder="TS-4821" autocomplete="off" autocapitalize="characters">' +
+      '<button class="act" id="btn-open">Open Trip Sheet</button>' +
+    '</div>' +
+    '<p class="note">You can only open a trip dispatch has issued. Completed trips are read-only.</p>' +
+    '</div></div>' +
+    '<div class="card"><div class="card-body">' +
+      '<div class="hd"><h2>Assigned</h2><span class="sub">' + mine.length + ' open</span></div>' +
+      (mine.length === 0
+        ? '<div class="empty">No open trips right now.</div>'
+        : mine.map(t =>
+            '<div class="listrow" data-open="' + esc(t.id) + '" style="cursor:pointer">' +
+            '<div><b>' + esc(t.id) + '</b><div class="meta">' + esc(t.vehicle) + ' · ' +
+              esc(t.routeFrom) + ' → ' + esc(t.routeTo) + '</div></div>' +
+            '<div>' + statusPill(t.status) + '</div></div>'
+          ).join('')) +
+    '</div></div>';
+}
+
+function statusPill(s){
+  return s === 'scheduled' ? '<span class="pill p-amber">Scheduled</span>'
+    : s === 'active' ? '<span class="pill p-green">Active</span>'
+    : '<span class="pill p-grey">Completed</span>';
+}
+
+function tripHeader(t){
+  const s = settlement(t);
+  return '<div class="card"><div class="card-body">' +
+    '<div class="hd"><h2>' + esc(t.id) + '</h2>' + statusPill(t.status) + '</div>' +
+    '<div class="kv">' +
+      kvi('Vehicle', esc(t.vehicle)) +
+      kvi('Route', esc(t.routeFrom) + ' → ' + esc(t.routeTo)) +
+      kvi('Load', t.loadKL.toFixed(1) + ' KL', 'a') +
+      kvi('Advance', inr(s.advance)) +
+      kvi('Invoice', esc(t.invoiceNo || '—')) +
+      kvi('Deadline', fmtClock(t.deadline)) +
+    '</div>' +
+    '<button class="ghost" id="btn-close">← Different trip</button>' +
+    '</div></div>';
+}
+function kvi(k, v, cls){ return '<div><div class="k">' + k + '</div><div class="v ' + (cls||'') + '">' + v + '</div></div>'; }
+
+function departScreen(t){
+  const last = lastKnownOdometer(t.vehicle);
+  return tripHeader(t) +
+    '<div class="card"><div class="card-body">' +
+      '<h2>Start Trip</h2><div class="sub">confirm departure</div>' +
+      '<div style="margin-top:14px">' + errBlock() +
+        '<div class="row2">' +
+          '<div class="field"><label>Departure Weight (kg)</label><input id="d-weight" type="number" inputmode="numeric" value="14360"></div>' +
+          '<div class="field"><label>Time</label><input id="d-time" type="datetime-local" value="' + localNowValue() + '"></div>' +
+        '</div>' +
+        '<div class="field"><label>Opening Odometer (km) <span class="req">· required</span></label>' +
+          '<input id="d-odo" type="number" inputmode="numeric" placeholder="dash reading now"></div>' +
+        (last
+          ? '<p class="note">Last recorded for ' + esc(t.vehicle) + ': <b>' + kmv(last.km) + ' km</b> (' + esc(last.src) + ').</p>'
+          : '<p class="note">No previous reading on file for ' + esc(t.vehicle) + '.</p>') +
+        '<button class="act" id="btn-depart">Start Trip</button>' +
+      '</div>' +
+    '</div></div>';
+}
+
+function activeScreen(t){
+  const stops = classifyStops(t);
+  const s = settlement(t);
+  const headOpts = EXPENSE_HEADS.concat(EXPENSE_EXTRAS).map(h => '<option>' + h + '</option>').join('');
+
+  return tripHeader(t) +
+
+    /* Stops */
+    '<div class="card"><div class="card-body">' +
+      '<div class="hd"><h2>Stops</h2><span class="sub">' + stops.length + ' / ' + t.maxStops + ' allowed</span></div>' +
+      (stops.length === 0 ? '<div class="empty">No stops yet.</div>' :
+        stops.map((s, i) =>
+          '<div class="listrow"><div><b>' + (i+1) + '. ' + esc(s.location) + '</b>' +
+          '<div class="meta">' + esc(s.type) + ' · ' + fmtClock(s.time) + '</div></div>' +
+          '<div>' + (s.unauthorized
+            ? '<span class="pill p-red">Flagged</span>'
+            : '<span class="pill p-green">OK</span>') + '</div></div>'
+        ).join('')) +
+      '<div class="divider"></div><div id="stopErr"></div>' +
+      '<div class="field"><label>Location</label><input id="s-loc" placeholder="Dharwad weighbridge"></div>' +
+      '<div class="row2">' +
+        '<div class="field"><label>Type</label><select id="s-type">' + STOP_TYPES.map(x => '<option>' + x + '</option>').join('') + '</select></div>' +
+        '<div class="field"><label>Time</label><input id="s-time" type="datetime-local" value="' + localNowValue() + '"></div>' +
+      '</div>' +
+      '<button class="ghost" id="btn-stop">+ Add Stop</button>' +
+      (stops.length >= t.maxStops
+        ? '<p class="note" style="color:var(--amber)">Stop limit reached — another stop will be flagged.</p>'
+        : '<p class="note">' + (t.maxStops - stops.length) + ' authorized stop(s) left.</p>') +
+    '</div></div>' +
+
+    /* Expenses */
+    '<div class="card"><div class="card-body">' +
+      '<div class="hd"><h2>Expenses</h2><span class="sub">advance ' + inr(s.advance) + '</span></div>' +
+      (t.expenses.length === 0 ? '<div class="empty">No expenses yet.</div>' :
+        t.expenses.map((e, i) =>
+          '<div class="listrow"><div><b>' + esc(e.head) + '</b>' +
+          (e.note ? '<div class="meta">' + esc(e.note) + '</div>' : '') +
+          (e.billName ? '<div class="meta">📎 ' + esc(e.billName) + '</div>' : '') +
+          '</div><div style="text-align:right"><div class="money">' + inr(e.amount) + '</div>' +
+          '<button class="ghost slim" data-delexp="' + i + '" style="margin-top:5px">Remove</button></div></div>'
+        ).join('')) +
+      '<div class="balancebar" style="margin-top:12px"><span class="sub">Total spent</span>' +
+        '<span class="amt a">' + inr(s.total) + '</span></div>' +
+      '<div class="divider"></div><div id="expErr"></div>' +
+      '<div class="row2">' +
+        '<div class="field"><label>Head</label><select id="e-head">' + headOpts + '</select></div>' +
+        '<div class="field"><label>Amount (₹)</label><input id="e-amount" type="number" inputmode="numeric" placeholder="1800"></div>' +
+      '</div>' +
+      '<div class="field" id="e-otherwrap" style="display:none"><label>Name it</label><input id="e-other" placeholder="e.g. Green tax"></div>' +
+      '<div class="field"><label>Note (optional)</label><input id="e-note" placeholder="Pay & Park, Irumpanam"></div>' +
+      '<div class="field"><label>Receipt photo (optional)</label><input id="e-bill" type="file" accept="image/*" capture="environment"></div>' +
+      '<button class="ghost" id="btn-expense">+ Add Expense</button>' +
+    '</div></div>' +
+
+    /* End trip */
+    '<div class="card"><div class="card-body">' +
+      '<h2>End Trip</h2><div class="sub">log arrival</div>' +
+      '<div style="margin-top:14px">' + errBlock() +
+        '<div class="row2">' +
+          '<div class="field"><label>Arrival Weight (kg)</label><input id="a-weight" type="number" inputmode="numeric" value="1200"></div>' +
+          '<div class="field"><label>Time</label><input id="a-time" type="datetime-local" value="' + localNowValue() + '"></div>' +
+        '</div>' +
+        '<div class="row2">' +
+          '<div class="field"><label>Closing Odo (km) <span class="req">· req</span></label><input id="a-odo" type="number" inputmode="numeric" placeholder="arrival"></div>' +
+          '<div class="field"><label>Diesel (L)</label><input id="a-diesel" type="number" inputmode="decimal" placeholder="500"></div>' +
+        '</div>' +
+        '<p class="note">Opened at ' + kmv(t.openingOdometer) + ' km. Closing − opening is this trip’s distance.</p>' +
+        '<button class="act danger" id="btn-arrive">End Trip &amp; Submit Sheet</button>' +
+      '</div>' +
+    '</div></div>';
+}
+
+function completedScreen(t){
+  const s = settlement(t), dist = distanceOf(t), mil = mileageOf(t);
+  const stops = classifyStops(t);
+  const flagged = stops.filter(x => x.unauthorized).length;
+  const balPay = s.balance >= 0;
+  return tripHeader(t) +
+    '<div class="card"><div class="card-body">' +
+      '<h2>Trip Sheet Submitted</h2><div class="sub">read-only · synced to dispatch</div>' +
+      '<div class="kv" style="margin-top:14px">' +
+        kvi('Total Expenses', inr(s.total), 'a') +
+        kvi('Advance', inr(s.advance)) +
+        kvi(balPay ? 'To be paid you' : 'To recover', inr(Math.abs(s.balance)), balPay ? 'g' : 'r') +
+        kvi('Distance', dist != null ? kmv(dist) + ' km' : '—') +
+        kvi('Diesel', t.dieselLitres != null ? kmv(t.dieselLitres) + ' L' : '—') +
+        kvi('Mileage', mil != null ? mil.toFixed(2) + ' km/L' : '—', 'g') +
+      '</div>' +
+      '<div class="balancebar" style="margin-top:14px"><span class="sub">Stops flagged</span>' +
+        '<span class="amt ' + (flagged ? 'r' : 'g') + '">' + flagged + '</span></div>' +
+      '<button class="act" id="btn-close">Open Another Trip</button>' +
+      '<p class="note">The full report, including inactivity analysis, is on the manager console.</p>' +
+    '</div></div>';
+}
+
+/* ---------------- wiring ---------------- */
+function wire(t){
+  const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+
+  on('btn-open', 'click', openFromInput);
+  on('tripid', 'keydown', e => { if (e.key === 'Enter') openFromInput(); });
+  document.querySelectorAll('[data-open]').forEach(r =>
+    r.addEventListener('click', () => { errMsg=''; currentId = r.dataset.open; render(); }));
+
+  on('btn-close', 'click', () => { currentId = null; errMsg=''; render(); });
+
+  if (!t) return;
+
+  on('btn-depart', 'click', () => doDepart(t));
+  on('btn-stop', 'click', () => doAddStop(t));
+  on('btn-arrive', 'click', () => doArrive(t));
+  on('btn-expense', 'click', () => doAddExpense(t));
+
+  const head = $('e-head');
+  if (head){
+    const sync = () => { $('e-otherwrap').style.display = head.value === 'Other' ? '' : 'none'; };
+    head.addEventListener('change', sync); sync();
+  }
+  document.querySelectorAll('[data-delexp]').forEach(b =>
+    b.addEventListener('click', () => { t.expenses.splice(+b.dataset.delexp, 1); saveDB(); render(); }));
+}
+
+function openFromInput(){
+  const id = ($('tripid').value || '').trim().toUpperCase();
+  const t = DB.trips.find(x => x.id === id);
+  if (!t){ setErr('No trip found for ' + (id || '—') + '. Check the ID with dispatch.'); return; }
+  errMsg = ''; currentId = id; render();
+}
+
+function doDepart(t){
+  const w = parseFloat($('d-weight').value);
+  const time = $('d-time').value;
+  const odo = parseInt($('d-odo').value, 10);
+  if (!(w > 0)) return setErr('Departure weight must be greater than zero.');
+  if (!time) return setErr('Departure time is required.');
+  if (!Number.isInteger(odo) || odo < 0) return setErr('Opening odometer is required before the trip can start.');
+  const last = lastKnownOdometer(t.vehicle);
+  if (last && odo < last.km) return setErr('Opening odometer ' + kmv(odo) + ' km is below the last recorded ' + kmv(last.km) + ' km for ' + t.vehicle + '.');
+
+  t.departure = { weight: w, time: new Date(time).getTime() };
+  t.openingOdometer = odo;
+  t.status = 'active';
+  errMsg = ''; saveDB(); render();
+}
+
+function doAddStop(t){
+  const loc = ($('s-loc').value || '').trim();
+  const time = $('s-time').value;
+  if (!loc){ $('stopErr').innerHTML = '<div class="err">Stop location is required.</div>'; return; }
+  if (!time){ $('stopErr').innerHTML = '<div class="err">Stop time is required.</div>'; return; }
+  const ts = new Date(time).getTime();
+  if (ts < t.departure.time){ $('stopErr').innerHTML = '<div class="err">A stop can’t be before departure.</div>'; return; }
+  t.stops.push({ location: loc, type: $('s-type').value, time: ts });
+  saveDB(); render();
+}
+
+function doAddExpense(t){
+  let head = $('e-head').value;
+  if (head === 'Other'){
+    head = ($('e-other').value || '').trim();
+    if (!head){ $('expErr').innerHTML = '<div class="err">Give the expense a name.</div>'; return; }
+  }
+  const amount = parseFloat($('e-amount').value);
+  if (!(amount > 0)){ $('expErr').innerHTML = '<div class="err">Amount must be greater than zero.</div>'; return; }
+  const file = $('e-bill').files[0];
+  t.expenses.push({
+    head, amount, note: ($('e-note').value || '').trim(),
+    billName: file ? file.name : null,
+    billUrl: file ? URL.createObjectURL(file) : null,
+    at: Date.now()
+  });
+  saveDB(); render();
+}
+
+function doArrive(t){
+  const w = parseFloat($('a-weight').value);
+  const time = $('a-time').value;
+  const odo = parseInt($('a-odo').value, 10);
+  if (!(w >= 0)) return setErr('Arrival weight is required.');
+  if (w > t.departure.weight) return setErr('Arrival weight can’t exceed departure weight (' + kmv(t.departure.weight) + ' kg).');
+  if (!time) return setErr('Arrival time is required.');
+  const ts = new Date(time).getTime();
+  if (ts <= t.departure.time) return setErr('Arrival must be after departure.');
+  const lastStop = t.stops.length ? Math.max(...t.stops.map(s => s.time)) : 0;
+  if (ts < lastStop) return setErr('Arrival can’t be before the last stop.');
+  if (!Number.isInteger(odo) || odo < 0) return setErr('Closing odometer is required to end the trip.');
+  if (odo <= t.openingOdometer) return setErr('Closing odometer must be above the opening ' + kmv(t.openingOdometer) + ' km.');
+  const dieselRaw = $('a-diesel').value;
+  const diesel = dieselRaw === '' ? null : parseFloat(dieselRaw);
+  if (diesel !== null && !(diesel > 0)) return setErr('Diesel litres must be greater than zero, or left blank.');
+
+  t.arrival = { weight: w, time: ts };
+  t.closingOdometer = odo;
+  t.dieselLitres = diesel;
+  t.status = 'completed';
+
+  /* The closing reading is a real odometer observation — push it to the shared
+     fuel log so trip distance and fleet distance stay in step. */
+  DB.seqs.fuelSeq = (DB.seqs.fuelSeq || 2000) + 1;
+  DB.fuelLog.push({ id: 'FL-' + DB.seqs.fuelSeq, vehicle: t.vehicle, kind: 'reading', date: ts, odometer: odo, source: t.id });
+
+  errMsg = ''; saveDB(); render();
+}
+
+render();
+</script>
+</body>
+</html>
