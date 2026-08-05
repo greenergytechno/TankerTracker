@@ -7,3 +7,15 @@ node_modules/
 dist/
 *.log
 .DS_Store
+
+# Runtime data written by server.py — this is the live store, not source.
+data/
+
+# Local SSH-debug scripts.
+debug-git-ssh.ps1
+debug_path.txt
+git-ssh-capture.bat
+git-ssh-test.bat
+git_ssh_test.py
+push_debug.py
+test-git-ssh.bat

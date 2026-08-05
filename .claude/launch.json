@@ -4,7 +4,7 @@
     {
       "name": "tms-prototype",
       "runtimeExecutable": "py",
-      "runtimeArgs": ["-m", "http.server", "8000"],
+      "runtimeArgs": ["server.py"],
       "port": 8000
     }
   ]
