@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TankerTrack</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono&family=Inter:wght@400;600&display=swap');
+  :root{--bg:#0C1310;--panel:#111A16;--cream:#EFE9DC;--dim:#9BAAA2;--faint:#5C6E66;
+    --amber:#F0A93E;--green:#5FD37B;--stroke:rgba(240,233,220,.14);
+    --f-display:'Bebas Neue',sans-serif;--f-body:'Inter',sans-serif;--f-mono:'Space Mono',monospace;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--cream);font-family:var(--f-body);min-height:100vh;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:26px;}
+  .brand{display:flex;align-items:center;gap:14px;}
+  .mark{width:46px;height:46px;border-radius:10px;background:rgba(240,169,62,.14);border:1px solid rgba(240,169,62,.35);
+    display:flex;align-items:center;justify-content:center;font-family:var(--f-display);color:var(--amber);font-size:20px;}
+  h1{font-family:var(--f-display);font-size:32px;letter-spacing:.03em;line-height:1;}
+  .brand p{font-family:var(--f-mono);font-size:10px;color:var(--faint);letter-spacing:.11em;text-transform:uppercase;margin-top:4px;}
+  .cards{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;max-width:640px;}
+  a.card{flex:1 1 240px;text-decoration:none;color:inherit;background:var(--panel);border:1px solid var(--stroke);
+    border-radius:14px;padding:22px;transition:border-color .15s;}
+  a.card:hover{border-color:var(--amber);}
+  a.card h2{font-family:var(--f-display);font-size:22px;letter-spacing:.03em;color:var(--amber);margin-bottom:6px;}
+  a.card p{font-size:13px;color:var(--dim);line-height:1.5;}
+  a.card .go{margin-top:14px;font-family:var(--f-mono);font-size:11px;color:var(--green);}
+  .note{font-family:var(--f-mono);font-size:10.5px;color:var(--faint);text-align:center;max-width:520px;line-height:1.6;}
+</style>
+</head>
+<body>
+  <div class="brand">
+    <div class="mark">TT</div>
+    <div><h1>TankerTrack</h1><p>Ethanol Fleet TMS</p></div>
+  </div>
+  <div class="cards">
+    <a class="card" href="tms-app.html">
+      <h2>Manager Console</h2>
+      <p>Dispatch scheduling, workshop &amp; cost tracking, fuel/mileage, trip reports and breakdown approvals.</p>
+      <div class="go">Open the website →</div>
+    </a>
+    <a class="card" href="driver.html">
+      <h2>Driver App</h2>
+      <p>In-cab: open your trip, log stops and expenses, report a breakdown, and submit the trip sheet with the GRN.</p>
+      <div class="go">Open the app →</div>
+    </a>
+  </div>
+  <p class="note">On a phone, open the Driver App and choose “Add to Home Screen” to install it. Location and camera need an HTTPS address (e.g. GitHub Pages), not a plain http:// link.</p>
+</body>
+</html>

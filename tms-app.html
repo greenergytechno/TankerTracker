@@ -113,6 +113,13 @@
   .req{color:var(--amber);}
   .filein.missing{border-color:rgba(226,71,43,.55);}
 
+  .bd-req{border:1px solid var(--stroke-2);border-radius:8px;padding:11px 12px;margin-bottom:10px;background:var(--panel-2);}
+  .bd-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:12.5px;}
+  .bd-note{width:100%;margin:2px 0 8px;padding:7px 9px;font-size:12px;}
+  .bd-actions{display:flex;gap:8px;}
+  .bd-actions .bd-ok{border-color:rgba(95,211,123,.5);color:var(--green);}
+  .bd-actions .bd-no{border-color:rgba(226,71,43,.5);color:var(--red);}
+
   .section-band{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
     margin:30px 0 14px;padding-bottom:10px;border-bottom:1px solid var(--stroke-2);}
   .section-band h2{font-family:var(--f-display);font-size:20px;letter-spacing:.05em;color:var(--amber);}
@@ -209,6 +216,11 @@
 
     <div>
       <div id="issued"></div>
+
+      <div class="card" id="breakdownCard">
+        <div class="card-head"><h2>Breakdown Approvals</h2><span class="hint" id="bdHint">roadside repair requests</span></div>
+        <div class="card-body" id="breakdownInbox"></div>
+      </div>
 
       <div class="card">
         <div class="card-head"><h2>Live Trip Board</h2><span class="hint">all trips this session</span></div>
@@ -393,6 +405,11 @@ const trips = new Map();
 let tripSeq = 4820;
 let openTripId = null;
 
+/* Roadside breakdown repair requests raised by drivers, awaiting the manager's
+   approval of the quoted price. Shared with the driver app via the store. */
+const breakdowns = [];
+let bdSeq = 3000;
+
 const nextTripId = () => 'TS-' + (++tripSeq);
 
 /* ---------------- shared-store persistence ----------------
@@ -404,7 +421,8 @@ function snapshot(){
     trips: [...trips.values()],
     fuelLog,
     maintenance,
-    seqs: { tripSeq, maintSeq, fuelSeq }
+    breakdowns,
+    seqs: { tripSeq, maintSeq, fuelSeq, bdSeq }
   };
 }
 function persist(){ TankerStore.save(snapshot()); }
@@ -414,7 +432,9 @@ function hydrate(s){
   (s.trips || []).forEach(t => trips.set(t.id, t));
   fuelLog.length = 0; (s.fuelLog || []).forEach(x => fuelLog.push(x));
   maintenance.length = 0; (s.maintenance || []).forEach(x => maintenance.push(x));
-  if (s.seqs){ tripSeq = s.seqs.tripSeq; maintSeq = s.seqs.maintSeq; fuelSeq = s.seqs.fuelSeq; }
+  breakdowns.length = 0; (s.breakdowns || []).forEach(x => breakdowns.push(x));
+  if (s.seqs){ tripSeq = s.seqs.tripSeq; maintSeq = s.seqs.maintSeq; fuelSeq = s.seqs.fuelSeq;
+    if (s.seqs.bdSeq != null) bdSeq = s.seqs.bdSeq; }
 }
 
 /* ---------------- helpers ---------------- */
@@ -582,6 +602,75 @@ function statusPill(status){
   return '<span class="pill ' + cls + '">' + text + '</span>';
 }
 
+/* ---------------- breakdown approvals & location ---------------- */
+
+/* An OpenStreetMap link for a coordinate — no map library needed. */
+function osmLink(lat, lng){
+  return 'https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lng + '#map=15/' + lat + '/' + lng;
+}
+function locText(loc){
+  if (!loc || loc.lat == null) return '';
+  return '<a class="billlink" href="' + osmLink(loc.lat, loc.lng) + '" target="_blank" rel="noopener">📍 ' +
+    loc.lat.toFixed(4) + ', ' + loc.lng.toFixed(4) + '</a>';
+}
+
+const bdCost = b => (b.status === 'approved' || b.status === 'completed') ? (b.amount || 0) : 0;
+
+function renderBreakdowns(){
+  const pending = breakdowns.filter(b => b.status === 'pending');
+  const settled = breakdowns.filter(b => b.status !== 'pending')
+    .sort((a, b) => (b.decision?.at || b.reportedAt) - (a.decision?.at || a.reportedAt));
+
+  $('bdHint').innerHTML = pending.length
+    ? '<span class="pill p-red">' + pending.length + ' pending</span>'
+    : 'roadside repair requests';
+  $('breakdownCard').style.borderColor = pending.length ? 'rgba(240,169,62,.5)' : '';
+
+  const pill = s => ({pending:'p-amber', approved:'p-green', rejected:'p-red', completed:'p-grey'}[s]);
+
+  const pendingHtml = pending.map(b =>
+    '<div class="bd-req">' +
+      '<div class="bd-top"><div><b>' + esc(b.vehicle) + '</b> · ' + esc(b.driver) +
+        ' <span class="pill p-amber">pending</span></div>' +
+        '<div class="money" style="color:var(--amber)">' + inr(b.amount) + '</div></div>' +
+      '<div class="note" style="margin:6px 0">' + esc(b.description) +
+        '<br>Quote: <b>' + esc(b.vendor) + '</b>' + (b.quoteName ? ' · 📎 ' +
+          (b.quoteUrl ? '<a class="billlink" href="' + b.quoteUrl + '" target="_blank" rel="noopener">' + esc(b.quoteName) + '</a>' : esc(b.quoteName)) : '') +
+        (b.location ? ' · ' + (locText(b.location) || esc(b.location.label || '')) : '') +
+        (b.tripId ? ' · trip ' + esc(b.tripId) : '') + '</div>' +
+      '<input class="bd-note" data-bdnote="' + esc(b.id) + '" placeholder="note to driver (optional)">' +
+      '<div class="bd-actions">' +
+        '<button class="ghost slim bd-ok" data-approve="' + esc(b.id) + '">Approve ' + inr(b.amount) + '</button>' +
+        '<button class="ghost slim bd-no" data-reject="' + esc(b.id) + '">Reject</button>' +
+      '</div>' +
+    '</div>').join('');
+
+  const settledHtml = settled.slice(0, 6).map(b =>
+    '<div class="flagline"><span class="pill ' + pill(b.status) + '">' + b.status + '</span> ' +
+      esc(b.vehicle) + ' · ' + inr(b.amount) + ' · ' + esc(b.vendor) +
+      (b.decision?.note ? ' <span style="color:var(--faint)">— “' + esc(b.decision.note) + '”</span>' : '') +
+    '</div>').join('');
+
+  $('breakdownInbox').innerHTML =
+    (pending.length ? pendingHtml : '<div class="empty">No pending requests.</div>') +
+    (settled.length ? '<div class="divider"></div>' + settledHtml : '');
+
+  document.querySelectorAll('[data-approve]').forEach(btn =>
+    btn.addEventListener('click', () => decideBreakdown(btn.dataset.approve, 'approved')));
+  document.querySelectorAll('[data-reject]').forEach(btn =>
+    btn.addEventListener('click', () => decideBreakdown(btn.dataset.reject, 'rejected')));
+}
+
+function decideBreakdown(id, status){
+  const b = breakdowns.find(x => x.id === id);
+  if (!b) return;
+  const noteEl = document.querySelector('[data-bdnote="' + id + '"]');
+  b.status = status;
+  b.decision = { by: 'Manager', at: Date.now(), note: noteEl ? noteEl.value.trim() : '' };
+  persist();
+  renderManager();
+}
+
 function renderManager(){
   const all = [...trips.values()];
 
@@ -597,11 +686,16 @@ function renderManager(){
     ['Ethanol Dispatched', dispatched.toFixed(1) + ' KL', 'a'],
     ['Unauthorized Stops', flagged, flagged ? 'r' : 'g'],
     ['Late Arrivals', late, late ? 'r' : 'g'],
+    ['Pending Approvals', breakdowns.filter(b => b.status === 'pending').length,
+      breakdowns.some(b => b.status === 'pending') ? 'r' : 'g'],
+    ['Roadside Repairs', inr(breakdowns.reduce((n, b) => n + bdCost(b), 0)), 'a'],
     ['Fleet Size', VEHICLES.length, ''],
     ['Maintenance Spend', inr(maintenance.reduce((n, r) => n + recTotal(r), 0)), 'a']
   ].map(([k, v, cls]) =>
     '<div class="stat"><div class="k">' + k + '</div><div class="v ' + cls + '">' + v + '</div></div>'
   ).join('');
+
+  renderBreakdowns();
 
   const board = all.slice().sort((a, b) => b.createdAt - a.createdAt);
   $('tripBoard').innerHTML = board.length === 0
@@ -612,8 +706,11 @@ function renderManager(){
         const bad = stops.filter(s => s.unauthorized).length;
         const stopCell = stops.length + ' / ' + t.maxStops +
           (bad ? ' <span class="pill p-red">' + bad + ' flagged</span>' : '');
+        const loc = (t.status === 'active' && t.lastLocation)
+          ? '<div class="note" style="margin-top:3px">' + locText(t.lastLocation) +
+            ' <span style="color:var(--faint)">' + fmtClock(t.lastLocation.at) + '</span></div>' : '';
         return '<tr><td class="strong">' + esc(t.id) + '</td><td>' + esc(t.vehicle) + '</td><td>' + esc(t.driver) +
-          '</td><td>' + esc(t.routeFrom) + ' → ' + esc(t.routeTo) + '</td><td>' + stopCell +
+          '</td><td>' + esc(t.routeFrom) + ' → ' + esc(t.routeTo) + loc + '</td><td>' + stopCell +
           '</td><td>' + statusPill(t.status) + '</td></tr>';
       }).join('') + '</tbody></table>';
 
@@ -1025,6 +1122,10 @@ function tripSheetBlock(t){
       '<div><span class="ts-k">Destination</span><span class="ts-v">' + esc(t.routeTo) + '</span></div>' +
       '<div><span class="ts-k">Return Date</span><span class="ts-v">' +
         (t.arrival ? fmtDate(t.arrival.time) : t.expectedReturn ? fmtDate(t.expectedReturn) + ' (exp.)' : '—') + '</span></div>' +
+      '<div><span class="ts-k">GRN (proof of delivery)</span><span class="ts-v">' +
+        (t.grnName
+          ? (t.grnUrl ? '<a class="billlink" href="' + t.grnUrl + '" target="_blank" rel="noopener">📎 ' + esc(t.grnName) + '</a>' : '📎 ' + esc(t.grnName))
+          : '<span style="color:var(--red)">missing</span>') + '</span></div>' +
     '</div>' +
 
     '<div class="ts-cols">' +

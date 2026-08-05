@@ -33,7 +33,7 @@ const TankerStore = (function () {
      */
     save(state) {
       localStorage.setItem(KEY, JSON.stringify(state, (k, v) =>
-        (k === 'billUrl' || k === 'billFile') ? undefined : v));
+        (k === 'billUrl' || k === 'billFile' || k === 'grnUrl' || k === 'quoteUrl') ? undefined : v));
     },
 
     clear() { localStorage.removeItem(KEY); },

@@ -1,0 +1,14 @@
+{
+  "name": "TankerTrack Driver",
+  "short_name": "TankerTrack",
+  "description": "In-cab driver app for the TankerTrack ethanol fleet TMS.",
+  "start_url": "./driver.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0C1310",
+  "theme_color": "#0C1310",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

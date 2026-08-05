@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>TankerTrack Driver</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0C1310">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TankerTrack">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700&display=swap');
 
@@ -30,7 +38,11 @@
     display:flex;align-items:center;justify-content:center;font-family:var(--f-display);color:var(--amber);font-size:15px;}
   .appbar h1{font-family:var(--f-display);font-size:19px;letter-spacing:.03em;line-height:1;}
   .appbar p{font-size:8.5px;color:var(--faint);letter-spacing:.11em;text-transform:uppercase;font-family:var(--f-mono);margin-top:2px;}
-  .who{margin-left:auto;text-align:right;font-family:var(--f-mono);font-size:9.5px;color:var(--dim);}
+  .locpill{margin-left:auto;background:var(--panel-2);border:1px solid var(--stroke-2);color:var(--dim);
+    border-radius:20px;padding:6px 11px;font-family:var(--f-mono);font-size:9.5px;cursor:pointer;white-space:nowrap;}
+  .locpill.on{border-color:rgba(95,211,123,.5);color:var(--green);}
+  .locpill.denied{border-color:rgba(226,71,43,.5);color:var(--red);}
+  .who{text-align:right;font-family:var(--f-mono);font-size:9.5px;color:var(--dim);margin-left:10px;}
 
   main{flex:1;padding:18px;overflow-y:auto;}
   .stack > * + *{margin-top:14px;}
@@ -98,6 +110,7 @@
       <h1>TankerTrack</h1>
       <p>Driver · In-Cab</p>
     </div>
+    <button class="locpill" id="locpill" title="Share location">📍 location off</button>
     <div class="who" id="who">not signed in</div>
   </div>
   <main id="screen"><div class="stack"></div></main>
@@ -125,9 +138,66 @@ let errMsg = '';
 
 function saveDB(){ TankerStore.save(DB); }
 const trip = () => DB.trips.find(t => t.id === currentId) || null;
+if (!DB.breakdowns) DB.breakdowns = [];
+if (!DB.seqs) DB.seqs = { tripSeq: 4820, maintSeq: 1000, fuelSeq: 2000, bdSeq: 3000 };
+if (DB.seqs.bdSeq == null) DB.seqs.bdSeq = 3000;
 
 /* When the manager schedules/updates in another tab, pick it up live. */
-TankerStore.onExternalChange(s => { DB = s; render(); });
+TankerStore.onExternalChange(s => {
+  DB = s;
+  if (!DB.breakdowns) DB.breakdowns = [];
+  render();
+});
+
+/* ---------------- location tracking ----------------
+   The app asks the device for the driver's position (browser Geolocation).
+   While a trip is active it watches the position and writes the last-known
+   point onto the trip, throttled, so the manager board can see the truck. */
+let geo = { lat: null, lng: null, at: null, status: 'off' }; // off|on|denied|unsupported
+let watchId = null;
+let lastGeoSave = 0;
+
+function updateLocPill(){
+  const el = $('locpill');
+  if (!el) return;
+  el.classList.remove('on', 'denied');
+  if (geo.status === 'on'){
+    el.classList.add('on');
+    el.textContent = '📍 ' + geo.lat.toFixed(3) + ', ' + geo.lng.toFixed(3);
+  } else if (geo.status === 'denied'){
+    el.classList.add('denied');
+    el.textContent = '📍 location blocked';
+  } else if (geo.status === 'unsupported'){
+    el.textContent = '📍 no GPS';
+  } else {
+    el.textContent = '📍 tap to share location';
+  }
+}
+
+function onPosition(pos){
+  geo = { lat: pos.coords.latitude, lng: pos.coords.longitude, at: Date.now(), status: 'on' };
+  updateLocPill();
+  // Stamp the active trip's last-known position, at most once every 15s.
+  const t = trip();
+  if (t && t.status === 'active' && Date.now() - lastGeoSave > 15000){
+    t.lastLocation = { lat: geo.lat, lng: geo.lng, at: geo.at };
+    lastGeoSave = Date.now();
+    saveDB();
+  }
+}
+function onGeoError(err){
+  geo.status = (err && err.code === 1) ? 'denied' : 'off';
+  updateLocPill();
+}
+
+function enableLocation(){
+  if (!('geolocation' in navigator)){ geo.status = 'unsupported'; updateLocPill(); return; }
+  navigator.geolocation.getCurrentPosition(onPosition, onGeoError, { enableHighAccuracy: true, timeout: 10000 });
+  if (watchId == null){
+    watchId = navigator.geolocation.watchPosition(onPosition, onGeoError,
+      { enableHighAccuracy: true, maximumAge: 10000 });
+  }
+}
 
 /* ---------------- helpers ---------------- */
 const $ = id => document.getElementById(id);
@@ -189,6 +259,7 @@ function render(){
 
   $('screen').innerHTML = '<div class="stack">' + html + '</div>';
   $('who').textContent = t ? esc(t.driver) : 'enter a Trip ID';
+  updateLocPill();
   wire(t);
 }
 
@@ -310,9 +381,13 @@ function activeScreen(t){
       '</div>' +
       '<div class="field" id="e-otherwrap" style="display:none"><label>Name it</label><input id="e-other" placeholder="e.g. Green tax"></div>' +
       '<div class="field"><label>Note (optional)</label><input id="e-note" placeholder="Pay & Park, Irumpanam"></div>' +
-      '<div class="field"><label>Receipt photo (optional)</label><input id="e-bill" type="file" accept="image/*" capture="environment"></div>' +
+      '<div class="field"><label>Bill / Receipt <span class="req">· required</span></label>' +
+        '<input id="e-bill" type="file" accept="image/*,application/pdf" capture="environment"></div>' +
       '<button class="ghost" id="btn-expense">+ Add Expense</button>' +
+      '<p class="note">No bill, no expense — attach the receipt to add it.</p>' +
     '</div></div>' +
+
+    breakdownCard(t) +
 
     /* End trip */
     '<div class="card"><div class="card-body">' +
@@ -326,10 +401,46 @@ function activeScreen(t){
           '<div class="field"><label>Closing Odo (km) <span class="req">· req</span></label><input id="a-odo" type="number" inputmode="numeric" placeholder="arrival"></div>' +
           '<div class="field"><label>Diesel (L)</label><input id="a-diesel" type="number" inputmode="decimal" placeholder="500"></div>' +
         '</div>' +
-        '<p class="note">Opened at ' + kmv(t.openingOdometer) + ' km. Closing − opening is this trip’s distance.</p>' +
+        '<div class="field"><label>GRN — Goods Receipt Note <span class="req">· required</span></label>' +
+          '<input id="a-grn" type="file" accept="image/*,application/pdf" capture="environment"></div>' +
+        '<p class="note">Opened at ' + kmv(t.openingOdometer) + ' km. The signed GRN is your proof of delivery — the trip cannot be closed without it.</p>' +
         '<button class="act danger" id="btn-arrive">End Trip &amp; Submit Sheet</button>' +
       '</div>' +
     '</div></div>';
+}
+
+/* The roadside-breakdown workflow: log the fault + a quote, request the
+   manager's approval of that price, and once approved go ahead and mark it done. */
+function breakdownCard(t){
+  const mine = DB.breakdowns.filter(b => b.tripId === t.id).sort((a, b) => b.reportedAt - a.reportedAt);
+  const bp = s => ({pending:'p-amber', approved:'p-green', rejected:'p-red', completed:'p-grey'}[s]);
+
+  const rows = mine.map(b => {
+    const dec = b.decision && b.decision.note ? '<div class="meta">Manager: “' + esc(b.decision.note) + '”</div>' : '';
+    let action = '';
+    if (b.status === 'approved') action = '<button class="ghost slim" data-bddone="' + esc(b.id) + '" style="margin-top:6px">Mark Repaired</button>';
+    else if (b.status === 'pending') action = '<div class="meta" style="color:var(--amber)">Awaiting manager approval…</div>';
+    return '<div class="listrow"><div><b>' + esc(b.vendor) + '</b> <span class="pill ' + bp(b.status) + '">' + b.status + '</span>' +
+      '<div class="meta">' + esc(b.description) + '</div>' + dec + action + '</div>' +
+      '<div class="money">' + inr(b.amount) + '</div></div>';
+  }).join('');
+
+  return '<div class="card"><div class="card-body">' +
+    '<div class="hd"><h2>Breakdown</h2><span class="sub">quote → manager approval</span></div>' +
+    (mine.length ? rows : '<div class="empty">No breakdown on this trip.</div>') +
+    '<div class="divider"></div><div id="bdErr"></div>' +
+    '<div class="field"><label>What happened</label><input id="bd-desc" placeholder="Alternator failed on NH-4"></div>' +
+    '<div class="row2">' +
+      '<div class="field"><label>Garage / Vendor</label><input id="bd-vendor" placeholder="Highway Auto Electricals"></div>' +
+      '<div class="field"><label>Quoted Amount (₹)</label><input id="bd-amount" type="number" inputmode="numeric" placeholder="22400"></div>' +
+    '</div>' +
+    '<div class="field"><label>Quotation photo (if available)</label><input id="bd-quote" type="file" accept="image/*" capture="environment"></div>' +
+    (geo.status === 'on'
+      ? '<p class="note">📍 Your location (' + geo.lat.toFixed(4) + ', ' + geo.lng.toFixed(4) + ') will be attached.</p>'
+      : '<p class="note">Tap “location” at the top to attach where you broke down.</p>') +
+    '<button class="act danger" id="btn-breakdown">Request Approval</button>' +
+    '<p class="note">The manager approves the quoted price before the repair goes ahead.</p>' +
+  '</div></div>';
 }
 
 function completedScreen(t){
@@ -350,6 +461,9 @@ function completedScreen(t){
       '</div>' +
       '<div class="balancebar" style="margin-top:14px"><span class="sub">Stops flagged</span>' +
         '<span class="amt ' + (flagged ? 'r' : 'g') + '">' + flagged + '</span></div>' +
+      (t.grnName ? '<p class="note">GRN: ' + (t.grnUrl
+          ? '<a class="lnk" href="' + t.grnUrl + '" target="_blank" rel="noopener">📎 ' + esc(t.grnName) + '</a>'
+          : '📎 ' + esc(t.grnName)) + '</p>' : '') +
       '<button class="act" id="btn-close">Open Another Trip</button>' +
       '<p class="note">The full report, including inactivity analysis, is on the manager console.</p>' +
     '</div></div>';
@@ -372,6 +486,9 @@ function wire(t){
   on('btn-stop', 'click', () => doAddStop(t));
   on('btn-arrive', 'click', () => doArrive(t));
   on('btn-expense', 'click', () => doAddExpense(t));
+  on('btn-breakdown', 'click', () => doReportBreakdown(t));
+  document.querySelectorAll('[data-bddone]').forEach(b =>
+    b.addEventListener('click', () => doMarkRepaired(b.dataset.bddone)));
 
   const head = $('e-head');
   if (head){
@@ -402,7 +519,35 @@ function doDepart(t){
   t.departure = { weight: w, time: new Date(time).getTime() };
   t.openingOdometer = odo;
   t.status = 'active';
+  enableLocation();          // begin sharing position for the live board
   errMsg = ''; saveDB(); render();
+}
+
+function doReportBreakdown(t){
+  const desc = ($('bd-desc').value || '').trim();
+  const vendor = ($('bd-vendor').value || '').trim();
+  const amount = parseFloat($('bd-amount').value);
+  if (!desc){ $('bdErr').innerHTML = '<div class="err">Describe what happened.</div>'; return; }
+  if (!vendor){ $('bdErr').innerHTML = '<div class="err">Enter the garage giving the quote.</div>'; return; }
+  if (!(amount > 0)){ $('bdErr').innerHTML = '<div class="err">Enter the quoted amount.</div>'; return; }
+  const file = $('bd-quote').files[0];
+  DB.seqs.bdSeq = (DB.seqs.bdSeq || 3000) + 1;
+  DB.breakdowns.push({
+    id: 'BD-' + DB.seqs.bdSeq,
+    vehicle: t.vehicle, driver: t.driver, tripId: t.id,
+    reportedAt: Date.now(),
+    location: geo.status === 'on' ? { lat: geo.lat, lng: geo.lng, label: '' } : null,
+    description: desc, vendor, amount,
+    quoteName: file ? file.name : null,
+    quoteUrl: file ? URL.createObjectURL(file) : null,
+    status: 'pending', decision: null, completedAt: null
+  });
+  saveDB(); render();
+}
+
+function doMarkRepaired(id){
+  const b = DB.breakdowns.find(x => x.id === id);
+  if (b && b.status === 'approved'){ b.status = 'completed'; b.completedAt = Date.now(); saveDB(); render(); }
 }
 
 function doAddStop(t){
@@ -425,6 +570,8 @@ function doAddExpense(t){
   const amount = parseFloat($('e-amount').value);
   if (!(amount > 0)){ $('expErr').innerHTML = '<div class="err">Amount must be greater than zero.</div>'; return; }
   const file = $('e-bill').files[0];
+  // A bill is mandatory — an unbacked expense cannot be added.
+  if (!file){ $('expErr').innerHTML = '<div class="err">A bill/receipt is required for every expense.</div>'; return; }
   t.expenses.push({
     head, amount, note: ($('e-note').value || '').trim(),
     billName: file ? file.name : null,
@@ -450,10 +597,15 @@ function doArrive(t){
   const dieselRaw = $('a-diesel').value;
   const diesel = dieselRaw === '' ? null : parseFloat(dieselRaw);
   if (diesel !== null && !(diesel > 0)) return setErr('Diesel litres must be greater than zero, or left blank.');
+  // The GRN (proof of delivery) is mandatory to close the trip.
+  const grnFile = $('a-grn').files[0];
+  if (!grnFile) return setErr('Upload the GRN (Goods Receipt Note) image — the trip cannot be ended without it.');
 
   t.arrival = { weight: w, time: ts };
   t.closingOdometer = odo;
   t.dieselLitres = diesel;
+  t.grnName = grnFile.name;
+  t.grnUrl = URL.createObjectURL(grnFile);
   t.status = 'completed';
 
   /* The closing reading is a real odometer observation — push it to the shared
@@ -463,6 +615,10 @@ function doArrive(t){
 
   errMsg = ''; saveDB(); render();
 }
+
+/* The location pill lives in the static app bar, so it's wired once here (not in
+   wire(), which re-runs on every render). Tapping it asks for permission. */
+$('locpill').addEventListener('click', enableLocation);
 
 render();
 </script>
