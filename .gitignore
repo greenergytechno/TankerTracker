@@ -8,6 +8,9 @@ dist/
 *.log
 .DS_Store
 
+# Office temp/lock files (created when a .docx is open in Word).
+~$*
+
 # Runtime data written by server.py — this is the live store, not source.
 data/
 

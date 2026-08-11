@@ -165,7 +165,6 @@
 <div class="tabbar" role="tablist">
   <button class="tab active" role="tab" data-view="0">Manager · Dispatch</button>
   <button class="tab" role="tab" data-view="1">Manager · Workshop &amp; Costs</button>
-  <a class="tab tab-link" href="driver.html" target="_blank" rel="noopener">Driver App ↗</a>
 </div>
 
 <!-- ===================== MANAGER ===================== -->
@@ -193,6 +192,10 @@
             <div class="field"><label>Max Stops Allowed</label><input id="f-maxstops" type="number" min="0" step="1" value="2"></div>
             <div class="field"><label>Ethanol Load (KL)</label><input id="f-load" type="number" min="0" step="0.1" value="18.2"></div>
           </div>
+          <div class="row2">
+            <div class="field"><label>Trip Start Date <span class="req">— driver may begin</span></label><input id="f-start" type="date"></div>
+            <div class="field"><label>Expected Receiving Date</label><input id="f-receive" type="date"></div>
+          </div>
           <div class="field"><label>Delivery Deadline</label><input id="f-deadline" type="datetime-local"></div>
           <div class="field"><label>GPS Access Point</label><input id="f-gps" placeholder="Belagavi Depot — Gate 2"></div>
           <div class="row2">
@@ -211,6 +214,21 @@
       <div class="card">
         <div class="card-head"><h2>Fleet Snapshot</h2><span class="hint">live</span></div>
         <div class="card-body"><div class="stats" id="fleetStats"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Driver Logins</h2><span class="hint">id &amp; password to hand out</span></div>
+        <div class="card-body">
+          <div id="driverErr"></div>
+          <div id="driverList"></div>
+          <div class="divider"></div>
+          <div class="row2">
+            <div class="field"><label>Add Driver — Name</label><input id="nd-name" placeholder="D. Souza"></div>
+            <div class="field"><label>Phone (optional)</label><input id="nd-phone" placeholder="98861 00000"></div>
+          </div>
+          <button id="btn-add-driver">Add Driver</button>
+          <p class="note">Each driver signs in to the driver app with their own id and password (shown above) — no more typing Trip IDs. Assign a driver to a trip in the scheduler and it appears on their home screen. Passwords are stored in the clear in this prototype (see docs/SECURITY-REPORT.docx); real auth is the API's JWT login.</p>
+        </div>
       </div>
     </div>
 
@@ -412,6 +430,35 @@ let bdSeq = 3000;
 
 const nextTripId = () => 'TS-' + (++tripSeq);
 
+/* ---------------- driver roster (logins) ----------------
+   Each driver has a login id + password. Seeded deterministically from DRIVERS
+   the first time either client runs, so the manager and the driver app produce
+   the SAME roster with no conflict. The manager hands each driver their id/pin.
+   (Prototype: passwords live in the clear in the shared store — see
+   docs/SECURITY-REPORT.docx. Real auth is the API's JWT login + device binding.) */
+const drivers = [];
+function makeDriverId(name, taken){
+  const parts = String(name).toLowerCase().replace(/[^a-z\s.]/g, ' ').split(/[\s.]+/).filter(Boolean);
+  let base = parts.length >= 2 ? parts[0][0] + parts[parts.length - 1] : (parts[0] || 'driver');
+  base = base.replace(/[^a-z0-9]/g, '') || 'driver';
+  let id = base, n = 1;
+  while (taken.has(id)) id = base + (++n);
+  return id;
+}
+function makePin(seed){
+  let h = 0; for (const ch of String(seed)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return String(1000 + (h % 9000));   // stable 4-digit PIN
+}
+function seedDrivers(){
+  if (drivers.length) return false;
+  const taken = new Set();
+  DRIVERS.forEach(name => {
+    const id = makeDriverId(name, taken); taken.add(id);
+    drivers.push({ id, name, password: makePin(name + '|' + id), phone: '' });
+  });
+  return true;
+}
+
 /* ---------------- shared-store persistence ----------------
    The manager and the driver app read/write one shared store (see store.js).
    snapshot() serialises this page's state; hydrate() overlays a snapshot from
@@ -422,6 +469,7 @@ function snapshot(){
     fuelLog,
     maintenance,
     breakdowns,
+    drivers,
     seqs: { tripSeq, maintSeq, fuelSeq, bdSeq }
   };
 }
@@ -433,6 +481,7 @@ function hydrate(s){
   fuelLog.length = 0; (s.fuelLog || []).forEach(x => fuelLog.push(x));
   maintenance.length = 0; (s.maintenance || []).forEach(x => maintenance.push(x));
   breakdowns.length = 0; (s.breakdowns || []).forEach(x => breakdowns.push(x));
+  drivers.length = 0; (s.drivers || []).forEach(d => drivers.push(d));
   if (s.seqs){ tripSeq = s.seqs.tripSeq; maintSeq = s.seqs.maintSeq; fuelSeq = s.seqs.fuelSeq;
     if (s.seqs.bdSeq != null) bdSeq = s.seqs.bdSeq; }
 }
@@ -526,11 +575,59 @@ function classifyStops(trip){
 }
 
 /* ---------------- manager: scheduling ---------------- */
+function refreshDriverSelect(){
+  const sel = $('f-driver'); if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = drivers.map(d => '<option value="' + esc(d.id) + '">' + esc(d.name) + '</option>').join('');
+  if (cur && drivers.some(d => d.id === cur)) sel.value = cur;
+}
 function initForm(){
   $('f-vehicle').innerHTML = VEHICLES.map(v => '<option>' + esc(v) + '</option>').join('');
-  $('f-driver').innerHTML = DRIVERS.map(d => '<option>' + esc(d) + '</option>').join('');
+  refreshDriverSelect();
   const deadline = new Date(Date.now() + 6*3600*1000 - new Date().getTimezoneOffset()*60000);
   $('f-deadline').value = deadline.toISOString().slice(0,16);
+  const dstr = off => { const d = new Date(Date.now() + off*86400000); return new Date(d - d.getTimezoneOffset()*60000).toISOString().slice(0,10); };
+  $('f-start').value = dstr(0);      // default: startable today
+  $('f-receive').value = dstr(2);    // default: +2 days
+}
+
+/* The roster the manager reads off to each driver: name, login id, password,
+   and how many open trips they have. Reset re-rolls a driver's password. */
+function renderDrivers(){
+  const box = $('driverList');
+  if (!box) return;
+  if (!drivers.length){ box.innerHTML = '<p class="note">No drivers yet. Add one below.</p>'; return; }
+  const openCount = id => [...trips.values()].filter(t => t.driverId === id && t.status !== 'completed').length;
+  const mono = 'font-family:var(--f-mono)';
+  box.innerHTML =
+    '<table><thead><tr><th>Driver</th><th>Login ID</th><th>Password</th><th>Open</th><th></th></tr></thead><tbody>' +
+    drivers.map(d =>
+      '<tr><td>' + esc(d.name) +
+        (d.phone ? '<div style="color:var(--faint);font-size:10px">' + esc(d.phone) + '</div>' : '') + '</td>' +
+      '<td style="' + mono + '">' + esc(d.id) + '</td>' +
+      '<td style="' + mono + '">' + esc(d.password) + '</td>' +
+      '<td>' + openCount(d.id) + '</td>' +
+      '<td style="text-align:right"><button data-resetpin="' + esc(d.id) + '" style="width:auto;padding:5px 10px;font-size:10px">Reset</button></td></tr>'
+    ).join('') +
+    '</tbody></table>';
+  box.querySelectorAll('[data-resetpin]').forEach(b => b.addEventListener('click', () => {
+    const d = drivers.find(x => x.id === b.dataset.resetpin);
+    if (d){ d.password = makePin(d.id + '|' + Date.now()); persist(); renderDrivers(); }
+  }));
+}
+
+function addDriver(){
+  const name = ($('nd-name').value || '').trim();
+  const phone = ($('nd-phone').value || '').trim();
+  if (!name) return showErr('driverErr', 'Enter the driver’s name.');
+  const taken = new Set(drivers.map(d => d.id));
+  const id = makeDriverId(name, taken);
+  drivers.push({ id, name, password: makePin(name + '|' + id + '|' + Date.now()), phone });
+  showErr('driverErr', '');
+  $('nd-name').value = ''; $('nd-phone').value = '';
+  persist();
+  refreshDriverSelect();
+  renderDrivers();
 }
 
 function scheduleTrip(){
@@ -544,15 +641,21 @@ function scheduleTrip(){
   const phone = $('f-phone').value.trim() || $('f-phone').placeholder;
   const advance = parseFloat($('f-advance').value);
   const expectedReturn = $('f-return').value;
+  const startDate = $('f-start').value;
+  const receiveDate = $('f-receive').value;
 
   if (!from || !to) return showErr('schedErr', 'Origin and destination are both required.');
   if (from.toLowerCase() === to.toLowerCase()) return showErr('schedErr', 'Origin and destination cannot be the same.');
   if (!Number.isInteger(maxStops) || maxStops < 0) return showErr('schedErr', 'Max stops must be a whole number, zero or more.');
   if (!(load > 0)) return showErr('schedErr', 'Ethanol load must be greater than zero.');
+  if (!startDate) return showErr('schedErr', 'A trip start date is required — the driver can start only on this date.');
   if (!deadline) return showErr('schedErr', 'A delivery deadline is required.');
   if (!(advance >= 0)) return showErr('schedErr', 'Advance paid must be zero or more.');
 
   const vehicle = $('f-vehicle').value;
+  const driverId = $('f-driver').value;
+  const driverObj = drivers.find(d => d.id === driverId);
+  if (!driverObj) return showErr('schedErr', 'Pick a driver. Add one under Driver Logins if the list is empty.');
   const busy = [...trips.values()].find(t => t.vehicle === vehicle && t.status !== 'completed');
   if (busy) return showErr('schedErr', vehicle + ' already has an open trip (' + busy.id + '). Close it before scheduling another.');
 
@@ -560,11 +663,14 @@ function scheduleTrip(){
   const trip = {
     id: nextTripId(),
     vehicle,
-    driver: $('f-driver').value,
+    driver: driverObj.name,
+    driverId: driverObj.id,
     routeFrom: from,
     routeTo: to,
     maxStops,
     loadKL: load,
+    startDate: new Date(startDate + 'T00:00:00').getTime(),
+    expectedReceiveDate: receiveDate ? new Date(receiveDate + 'T00:00:00').getTime() : null,
     deadline: new Date(deadline).getTime(),
     gpsPoint: gps,
     // Manager-set "main things" — locked; the driver cannot edit these.
@@ -593,6 +699,7 @@ function scheduleTrip(){
     '</div></div></div>';
 
   renderManager();
+  renderDrivers();
 }
 
 /* ---------------- manager: rendering ---------------- */
@@ -1871,6 +1978,7 @@ viewTabs.forEach(tab => {
   });
 });
 $('btn-schedule').addEventListener('click', scheduleTrip);
+$('btn-add-driver').addEventListener('click', addDriver);
 $('modalWrap').addEventListener('click', e => { if (e.target === $('modalWrap')) $('modalWrap').classList.remove('open'); });
 
 $('btn-maint').addEventListener('click', saveMaintenance);
@@ -1888,12 +1996,15 @@ $('fu-kind').addEventListener('change', syncFuelKind);
 /* Overlay any saved store (survives refresh, and picks up trips the driver app
    has completed); otherwise persist the freshly-seeded data as the baseline. */
 const savedState = TankerStore.load();
-if (savedState) hydrate(savedState); else persist();
+if (savedState) hydrate(savedState);
+const seededRoster = seedDrivers();          // first run (or an older store) → seed logins
+if (!savedState || seededRoster) persist();
 
 /* When the driver app writes in another tab, refresh the manager live. */
 TankerStore.onExternalChange(s => {
   hydrate(s);
-  renderManager(); renderWorkshop(); renderFuel();
+  if (seedDrivers()) persist();
+  renderManager(); renderWorkshop(); renderFuel(); renderDrivers();
 });
 
 initForm();
@@ -1903,6 +2014,7 @@ showBillPick();
 renderWorkshop();
 renderFuel();
 renderManager();
+renderDrivers();
 </script>
 </body>
 </html>

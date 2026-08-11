@@ -139,13 +139,46 @@ let errMsg = '';
 function saveDB(){ TankerStore.save(DB); }
 const trip = () => DB.trips.find(t => t.id === currentId) || null;
 if (!DB.breakdowns) DB.breakdowns = [];
+if (!DB.drivers) DB.drivers = [];
 if (!DB.seqs) DB.seqs = { tripSeq: 4820, maintSeq: 1000, fuelSeq: 2000, bdSeq: 3000 };
 if (DB.seqs.bdSeq == null) DB.seqs.bdSeq = 3000;
 
-/* When the manager schedules/updates in another tab, pick it up live. */
+/* ---------------- driver login ----------------
+   Each driver signs in with an id + password issued by the manager. The roster
+   is seeded deterministically (identical to the manager's makeDriverId/makePin),
+   so sign-in works even if the driver app is opened before the console ever ran.
+   The session persists on this device until the driver signs out. */
+const DRV_ROSTER = ['R. Naik','M. Iqbal','S. Reddy','P. Kumar','A. Shetty','V. Gowda','N. Hegde','B. Patil','T. Rao','K. Fernandes'];
+const DRV_SESSION = 'tankertrack.driver.session';
+let currentDriver = null;
+function makeDriverId(name, taken){
+  const parts = String(name).toLowerCase().replace(/[^a-z\s.]/g, ' ').split(/[\s.]+/).filter(Boolean);
+  let base = parts.length >= 2 ? parts[0][0] + parts[parts.length - 1] : (parts[0] || 'driver');
+  base = base.replace(/[^a-z0-9]/g, '') || 'driver';
+  let id = base, n = 1;
+  while (taken.has(id)) id = base + (++n);
+  return id;
+}
+function makePin(seed){
+  let h = 0; for (const ch of String(seed)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return String(1000 + (h % 9000));
+}
+function seedDrivers(){
+  if (DB.drivers && DB.drivers.length) return false;
+  DB.drivers = [];
+  const taken = new Set();
+  DRV_ROSTER.forEach(name => { const id = makeDriverId(name, taken); taken.add(id); DB.drivers.push({ id, name, password: makePin(name + '|' + id), phone: '' }); });
+  return true;
+}
+if (seedDrivers()) saveDB();
+try { const sid = localStorage.getItem(DRV_SESSION); if (sid) currentDriver = (DB.drivers || []).find(d => d.id === sid) || null; } catch {}
+
+/* When the manager schedules/updates in another tab or device, pick it up live. */
 TankerStore.onExternalChange(s => {
   DB = s;
   if (!DB.breakdowns) DB.breakdowns = [];
+  if (!DB.drivers) DB.drivers = [];
+  if (currentDriver) currentDriver = DB.drivers.find(d => d.id === currentDriver.id) || null;
   render();
 });
 
@@ -209,6 +242,22 @@ const fmtClock = ms => new Date(ms).toLocaleTimeString([], {hour:'2-digit', minu
 const fmtTime = ms => fmtDate(ms) + ', ' + fmtClock(ms);
 const dateValue = ms => new Date(ms - new Date(ms).getTimezoneOffset()*60000).toISOString().slice(0,10);
 const localNowValue = () => { const d=new Date(); return new Date(d - d.getTimezoneOffset()*60000).toISOString().slice(0,16); };
+const startOfDay = ms => { const d = new Date(ms); d.setHours(0,0,0,0); return d.getTime(); };
+
+/* Date gate: a trip may be started only on its scheduled start date. Starting
+   EARLY is blocked. A missed date still allows a (flagged) late start, so a
+   delayed trip isn't permanently locked out. */
+function startGate(t){
+  if (!t.startDate) return { can: true, state: 'ready' };
+  const today = startOfDay(Date.now()), sd = startOfDay(t.startDate);
+  if (today < sd) return { can: false, state: 'early', days: Math.round((sd - today) / DAY) };
+  if (today > sd) return { can: true, state: 'late', days: Math.round((today - sd) / DAY) };
+  return { can: true, state: 'today' };
+}
+function myTrips(){
+  if (!currentDriver) return [];
+  return DB.trips.filter(t => t.driverId ? t.driverId === currentDriver.id : t.driver === currentDriver.name);
+}
 
 /* Highest odometer on file for a vehicle — from fuel readings or past trips.
    Same cross-source check the manager does, so the two can't contradict. */
@@ -252,40 +301,105 @@ function setErr(m){ errMsg = m || ''; render(); }
 function render(){
   const t = trip();
   let html;
-  if (!t) html = lookupScreen();
+  if (!currentDriver) html = loginScreen();
+  else if (!t) html = homeScreen();
   else if (t.status === 'scheduled') html = departScreen(t);
   else if (t.status === 'active') html = activeScreen(t);
   else html = completedScreen(t);
 
   $('screen').innerHTML = '<div class="stack">' + html + '</div>';
-  $('who').textContent = t ? esc(t.driver) : 'enter a Trip ID';
+  $('who').textContent = currentDriver ? esc(currentDriver.name) : 'not signed in';
   updateLocPill();
   wire(t);
 }
 
 function errBlock(){ return errMsg ? '<div class="err">' + esc(errMsg) + '</div>' : ''; }
 
-function lookupScreen(){
-  const mine = DB.trips.filter(t => t.status !== 'completed');
+function loginScreen(){
   return '<div class="card"><div class="card-body">' +
-    '<h2>Open Your Trip</h2><div class="sub">enter the ID dispatch gave you</div>' +
+    '<h2>Driver Sign In</h2><div class="sub">use the id &amp; password from your manager</div>' +
     '<div style="margin-top:14px">' + errBlock() +
-      '<label>Trip ID</label><input id="tripid" placeholder="TS-4821" autocomplete="off" autocapitalize="characters">' +
-      '<button class="act" id="btn-open">Open Trip Sheet</button>' +
+      '<div class="field"><label>Driver ID</label>' +
+        '<input id="lg-id" placeholder="rnaik" autocomplete="username" autocapitalize="none" autocorrect="off"></div>' +
+      '<div class="field"><label>Password</label>' +
+        '<input id="lg-pw" type="password" placeholder="••••" autocomplete="current-password"></div>' +
+      '<button class="act" id="btn-login">Sign In</button>' +
     '</div>' +
-    '<p class="note">You can only open a trip dispatch has issued. Completed trips are read-only.</p>' +
-    '</div></div>' +
-    '<div class="card"><div class="card-body">' +
-      '<div class="hd"><h2>Assigned</h2><span class="sub">' + mine.length + ' open</span></div>' +
-      (mine.length === 0
-        ? '<div class="empty">No open trips right now.</div>'
-        : mine.map(t =>
-            '<div class="listrow" data-open="' + esc(t.id) + '" style="cursor:pointer">' +
-            '<div><b>' + esc(t.id) + '</b><div class="meta">' + esc(t.vehicle) + ' · ' +
-              esc(t.routeFrom) + ' → ' + esc(t.routeTo) + '</div></div>' +
-            '<div>' + statusPill(t.status) + '</div></div>'
-          ).join('')) +
+    '<p class="note">Your upcoming trips appear here once your manager assigns them. A trip can be started only on its scheduled start date.</p>' +
+  '</div></div>';
+}
+
+function greetingCard(){
+  return '<div class="card"><div class="card-body">' +
+    '<div class="hd"><div><h2>Hello, ' + esc(currentDriver.name) + '</h2>' +
+      '<div class="sub">signed in as ' + esc(currentDriver.id) + '</div></div>' +
+    '<button class="ghost slim" id="btn-logout" style="width:auto">Sign out</button></div>' +
+  '</div></div>';
+}
+
+/* One assigned-trip card on the home screen: route, vehicle, the two dates, and
+   a start/continue button that is disabled until the scheduled start date. */
+function tripRow(t, contLabel){
+  const g = startGate(t);
+  const isActive = t.status === 'active';
+  let btn, note = '';
+  if (isActive){
+    btn = '<button class="act" data-open="' + esc(t.id) + '" style="margin-top:12px">' + (contLabel || 'Continue trip') + '</button>';
+  } else if (!g.can){
+    btn = '<button class="act" disabled style="margin-top:12px;opacity:.45;cursor:not-allowed">Starts ' + fmtDate(t.startDate) + '</button>';
+    note = '<p class="note">Available to start on <b>' + fmtDate(t.startDate) + '</b>' +
+      (g.days ? ' — in ' + g.days + ' day' + (g.days > 1 ? 's' : '') : '') + '.</p>';
+  } else {
+    btn = '<button class="act" data-open="' + esc(t.id) + '" style="margin-top:12px">' +
+      (g.state === 'late' ? 'Start trip (late)' : 'Start trip') + '</button>';
+    if (g.state === 'late') note = '<p class="note" style="color:var(--amber)">Was scheduled for ' +
+      fmtDate(t.startDate) + ' — ' + g.days + ' day' + (g.days > 1 ? 's' : '') + ' ago.</p>';
+  }
+  return '<div style="border:1px solid var(--stroke);border-radius:11px;padding:13px;margin-top:11px;background:var(--panel-2)">' +
+    '<div class="hd" style="margin:0 0 8px"><b>' + esc(t.id) + '</b>' + statusPill(t.status) + '</div>' +
+    '<div class="kv">' +
+      kvi('Route', esc(t.routeFrom) + ' → ' + esc(t.routeTo)) +
+      kvi('Vehicle', esc(t.vehicle)) +
+      kvi('Start date', t.startDate ? fmtDate(t.startDate) : '—', 'a') +
+      kvi('Expected receiving', t.expectedReceiveDate ? fmtDate(t.expectedReceiveDate) : '—') +
+    '</div>' + btn + note +
+  '</div>';
+}
+
+function homeScreen(){
+  const mine = myTrips();
+  const active = mine.filter(t => t.status === 'active');
+  const upcoming = mine.filter(t => t.status === 'scheduled').sort((a, b) => (a.startDate || 0) - (b.startDate || 0));
+  const done = mine.filter(t => t.status === 'completed')
+    .sort((a, b) => ((b.arrival && b.arrival.time) || 0) - ((a.arrival && a.arrival.time) || 0));
+
+  const activeHtml = active.length
+    ? '<div class="card"><div class="card-body">' +
+        '<div class="hd"><h2>In Progress</h2><span class="sub">' + active.length + '</span></div>' +
+        active.map(t => tripRow(t, 'Continue trip')).join('') +
+      '</div></div>'
+    : '';
+
+  const upHtml = '<div class="card"><div class="card-body">' +
+      '<div class="hd"><h2>Upcoming Trips</h2><span class="sub">' + upcoming.length + ' assigned</span></div>' +
+      (upcoming.length === 0
+        ? '<div class="empty">No upcoming trips. Your manager will assign them.</div>'
+        : upcoming.map(t => tripRow(t)).join('')) +
     '</div></div>';
+
+  const doneHtml = done.length
+    ? '<div class="card"><div class="card-body">' +
+        '<div class="hd"><h2>Previous Trips</h2><span class="sub">' + done.length + ' completed</span></div>' +
+        done.map(t =>
+          '<div class="listrow" data-open="' + esc(t.id) + '" style="cursor:pointer">' +
+          '<div><b>' + esc(t.id) + '</b><div class="meta">' + esc(t.routeFrom) + ' → ' + esc(t.routeTo) +
+            ' · ' + fmtDate((t.arrival && t.arrival.time) || t.startDate || Date.now()) + '</div></div>' +
+          statusPill(t.status) + '</div>'
+        ).join('') +
+      '</div></div>'
+    : '';
+
+  return greetingCard() + errBlock() + activeHtml + upHtml + doneHtml;
 }
 
 function statusPill(s){
@@ -306,17 +420,30 @@ function tripHeader(t){
       kvi('Invoice', esc(t.invoiceNo || '—')) +
       kvi('Deadline', fmtClock(t.deadline)) +
     '</div>' +
-    '<button class="ghost" id="btn-close">← Different trip</button>' +
+    '<button class="ghost" id="btn-close">← My trips</button>' +
     '</div></div>';
 }
 function kvi(k, v, cls){ return '<div><div class="k">' + k + '</div><div class="v ' + (cls||'') + '">' + v + '</div></div>'; }
 
 function departScreen(t){
+  const g = startGate(t);
+  if (!g.can){
+    return tripHeader(t) +
+      '<div class="card"><div class="card-body">' +
+        '<h2>Not Yet</h2><div class="sub">starts ' + fmtDate(t.startDate) + '</div>' +
+        '<p class="note" style="margin-top:12px">This trip can be started only on its scheduled date' +
+          (g.days ? ' — in ' + g.days + ' day' + (g.days > 1 ? 's' : '') : '') +
+          '. Come back on <b>' + fmtDate(t.startDate) + '</b>.</p>' +
+      '</div></div>';
+  }
   const last = lastKnownOdometer(t.vehicle);
+  const lateBanner = g.state === 'late'
+    ? '<div class="err" style="background:rgba(240,169,62,.12);border-color:rgba(240,169,62,.4);color:#f0c987">Late start — scheduled for ' + fmtDate(t.startDate) + '.</div>'
+    : '';
   return tripHeader(t) +
     '<div class="card"><div class="card-body">' +
       '<h2>Start Trip</h2><div class="sub">confirm departure</div>' +
-      '<div style="margin-top:14px">' + errBlock() +
+      '<div style="margin-top:14px">' + lateBanner + errBlock() +
         '<div class="row2">' +
           '<div class="field"><label>Departure Weight (kg)</label><input id="d-weight" type="number" inputmode="numeric" value="14360"></div>' +
           '<div class="field"><label>Time</label><input id="d-time" type="datetime-local" value="' + localNowValue() + '"></div>' +
@@ -464,8 +591,8 @@ function completedScreen(t){
       (t.grnName ? '<p class="note">GRN: ' + (t.grnUrl
           ? '<a class="lnk" href="' + t.grnUrl + '" target="_blank" rel="noopener">📎 ' + esc(t.grnName) + '</a>'
           : '📎 ' + esc(t.grnName)) + '</p>' : '') +
-      '<button class="act" id="btn-close">Open Another Trip</button>' +
-      '<p class="note">The full report, including inactivity analysis, is on the manager console.</p>' +
+      '<button class="act" id="btn-close">Back to my trips</button>' +
+      '<p class="note">The full trip report, including inactivity analysis, is generated automatically once you submit.</p>' +
     '</div></div>';
 }
 
@@ -473,8 +600,9 @@ function completedScreen(t){
 function wire(t){
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
 
-  on('btn-open', 'click', openFromInput);
-  on('tripid', 'keydown', e => { if (e.key === 'Enter') openFromInput(); });
+  on('btn-login', 'click', doLogin);
+  on('lg-pw', 'keydown', e => { if (e.key === 'Enter') doLogin(); });
+  on('btn-logout', 'click', doLogout);
   document.querySelectorAll('[data-open]').forEach(r =>
     r.addEventListener('click', () => { errMsg=''; currentId = r.dataset.open; render(); }));
 
@@ -499,14 +627,23 @@ function wire(t){
     b.addEventListener('click', () => { t.expenses.splice(+b.dataset.delexp, 1); saveDB(); render(); }));
 }
 
-function openFromInput(){
-  const id = ($('tripid').value || '').trim().toUpperCase();
-  const t = DB.trips.find(x => x.id === id);
-  if (!t){ setErr('No trip found for ' + (id || '—') + '. Check the ID with dispatch.'); return; }
-  errMsg = ''; currentId = id; render();
+function doLogin(){
+  const id = ($('lg-id').value || '').trim().toLowerCase();
+  const pw = ($('lg-pw').value || '');
+  const d = (DB.drivers || []).find(x => x.id === id);
+  if (!d || String(d.password) !== pw){ setErr('Wrong driver ID or password.'); return; }
+  currentDriver = d;
+  try { localStorage.setItem(DRV_SESSION, d.id); } catch {}
+  errMsg = ''; currentId = null; render();
+}
+function doLogout(){
+  currentDriver = null; currentId = null; errMsg = '';
+  try { localStorage.removeItem(DRV_SESSION); } catch {}
+  render();
 }
 
 function doDepart(t){
+  if (!startGate(t).can) return setErr('This trip can only be started on ' + fmtDate(t.startDate) + '.');
   const w = parseFloat($('d-weight').value);
   const time = $('d-time').value;
   const odo = parseInt($('d-odo').value, 10);
