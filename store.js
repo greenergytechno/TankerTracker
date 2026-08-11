@@ -18,12 +18,26 @@
    ========================================================================== */
 const TankerStore = (function () {
   const KEY = 'tankertrack.v1';
+  // Token key is scoped to the app's role (set via window.TANKER_ROLE before this
+  // script loads), so a DRIVER's token can never satisfy the MANAGER console's
+  // gate — opening /tms-app.html with only a driver session still shows the
+  // manager password prompt.
+  const ROLE = (typeof window !== 'undefined' && window.TANKER_ROLE) ? window.TANKER_ROLE : 'default';
+  const TOKEN_KEY = 'tankertrack.token.' + ROLE;
   const API = '/api/store';
   const REV = '/api/rev';
+  const LOGIN = '/api/login';
+  const LOGOUT = '/api/logout';
 
   let serverOk = false;
   let lastRev = -1;
   let polling = false;
+  let token = null;
+  try { token = localStorage.getItem(TOKEN_KEY) || null; } catch { /* private mode */ }
+
+  // Attach the bearer token (if we have one) to a headers object.
+  function withAuth(h) { h = h || {}; if (token) h['Authorization'] = 'Bearer ' + token; return h; }
+  function clearToken() { token = null; try { localStorage.removeItem(TOKEN_KEY); } catch {} }
 
   // Object URLs / File handles are per-session and meaningless once stored, so
   // they are stripped on the way out — bill/GRN/quote *names* survive, the blobs
@@ -47,6 +61,7 @@ const TankerStore = (function () {
     try {
       const x = new XMLHttpRequest();
       x.open('GET', API, false);
+      if (token) x.setRequestHeader('Authorization', 'Bearer ' + token);
       x.send();
       if (x.status === 200) {
         const { rev, state } = JSON.parse(x.responseText);
@@ -54,6 +69,11 @@ const TankerStore = (function () {
         lastRev = rev;
         if (state) { writeCache(state); return state; }
         return null;            // server reachable but empty → let caller seed
+      }
+      if (x.status === 401) {   // server is up but we're not logged in
+        serverOk = true;
+        clearToken();           // drop any stale token so the client shows login
+        return null;
       }
     } catch (e) { /* no server */ }
     serverOk = false;
@@ -68,23 +88,51 @@ const TankerStore = (function () {
         mode, PUTs it to the computer so other devices see it. */
     save(state) {
       writeCache(state);
-      if (serverOk) {
+      if (serverOk && token) {
         fetch(API, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: withAuth({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(state, drop),
-        }).then(r => r.json()).then(j => { if (j && j.rev != null) lastRev = j.rev; })
-          .catch(() => { /* offline; cache still holds it */ });
+        }).then(r => r.ok ? r.json() : Promise.reject(r.status))
+          .then(j => { if (j && j.rev != null) lastRev = j.rev; })
+          .catch(() => { /* offline / not authed; cache still holds it */ });
       }
     },
 
     clear() {
       localStorage.removeItem(KEY);
-      if (serverOk) {
-        fetch(API, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: 'null' })
+      if (serverOk && token) {
+        fetch(API, { method: 'PUT', headers: withAuth({ 'Content-Type': 'application/json' }), body: 'null' })
           .catch(() => {});
       }
     },
+
+    /** Authenticate. payload = {id, password} for a driver, or
+        {manager:true, password} for the manager. Resolves with the server's
+        response ({token, role, driver?}); rejects with the HTTP status. */
+    login(payload) {
+      return fetch(LOGIN, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).then(r => r.ok ? r.json() : Promise.reject(r.status))
+        .then(j => {
+          token = j.token;
+          try { localStorage.setItem(TOKEN_KEY, token); } catch {}
+          serverOk = true; lastRev = -1;   // force a fresh pull on next poll
+          return j;
+        });
+    },
+
+    /** Drop the session (server-side + local). */
+    logout() {
+      const t = token;
+      clearToken();
+      if (t) fetch(LOGOUT, { method: 'POST', headers: { 'Authorization': 'Bearer ' + t } }).catch(() => {});
+    },
+
+    /** True once we hold a session token. */
+    hasToken() { return !!token; },
 
     /** Fires with the fresh snapshot when the store changes elsewhere — another
         browser tab (LOCAL mode) or another device (SERVER mode). */
@@ -98,11 +146,14 @@ const TankerStore = (function () {
       if (serverOk && !polling) {
         polling = true;
         setInterval(async () => {
+          if (!token) return;   // not logged in → nothing to poll
           try {
-            const r = await fetch(REV, { cache: 'no-store' });
+            const r = await fetch(REV, { cache: 'no-store', headers: withAuth() });
+            if (!r.ok) return;
             const { rev } = await r.json();
             if (rev > lastRev) {
-              const r2 = await fetch(API, { cache: 'no-store' });
+              const r2 = await fetch(API, { cache: 'no-store', headers: withAuth() });
+              if (!r2.ok) return;
               const { rev: rv, state } = await r2.json();
               lastRev = rv;
               if (state) { writeCache(state); fn(state); }

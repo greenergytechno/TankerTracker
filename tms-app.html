@@ -394,6 +394,7 @@
 
 <div class="modal-wrap" id="modalWrap"><div class="modal" id="modalBody"></div></div>
 
+<script>window.TANKER_ROLE = 'manager';</script>
 <script src="store.js?v=2"></script>
 <script>
 /* ---------------- seed data ----------------
@@ -1993,28 +1994,70 @@ $('fu-kind').addEventListener('change', syncFuelKind);
 ['fu-litres','fu-rate'].forEach(id => $(id).addEventListener('input', updateFuelTotal));
 ['fl-fuel-vehicle','fl-fuel-kind'].forEach(id => $(id).addEventListener('change', renderFuelLedger));
 
-/* Overlay any saved store (survives refresh, and picks up trips the driver app
-   has completed); otherwise persist the freshly-seeded data as the baseline. */
-const savedState = TankerStore.load();
-if (savedState) hydrate(savedState);
-const seededRoster = seedDrivers();          // first run (or an older store) → seed logins
-if (!savedState || seededRoster) persist();
+/* Load the store and paint the console. Runs only once the manager is
+   authenticated (or immediately in local file mode). */
+function loadManagerData(){
+  const savedState = TankerStore.load();
+  if (savedState) hydrate(savedState);
+  const seededRoster = seedDrivers();          // first run (or an older store) → seed logins
+  if (!savedState || seededRoster) persist();
+  initForm();
+  initMaintForm();
+  initFuelForm();
+  showBillPick();
+  renderWorkshop();
+  renderFuel();
+  renderManager();
+  renderDrivers();
+}
 
-/* When the driver app writes in another tab, refresh the manager live. */
+/* When the driver app writes on another device, refresh the manager live. */
 TankerStore.onExternalChange(s => {
   hydrate(s);
   if (seedDrivers()) persist();
   renderManager(); renderWorkshop(); renderFuel(); renderDrivers();
 });
 
-initForm();
-initMaintForm();
-initFuelForm();
-showBillPick();
-renderWorkshop();
-renderFuel();
-renderManager();
-renderDrivers();
+/* Manager auth gate. Online, the console is password-protected — a driver who
+   changes their URL to /tms-app.html lands here and, without the password, gets
+   no data at all. In local file mode (no server) it opens directly for dev. */
+function showManagerLogin(onSuccess){
+  const wrap = document.createElement('div');
+  wrap.id = 'mgr-login';
+  wrap.style.cssText = 'position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px;';
+  wrap.innerHTML =
+    '<div class="card" style="max-width:390px;width:100%;margin:0">' +
+      '<div class="card-head"><h2>Manager Sign In</h2><span class="hint">restricted</span></div>' +
+      '<div class="card-body">' +
+        '<div id="mgrErr"></div>' +
+        '<div class="field"><label>Manager Password</label>' +
+          '<input id="mgr-pw" type="password" placeholder="••••••••" autocomplete="current-password"></div>' +
+        '<button id="mgr-go">Unlock Console</button>' +
+        '<p class="note">The manager console is password-protected. Drivers use the separate driver app and cannot reach this data without this password.</p>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(wrap);
+  const submit = () => {
+    const pw = (document.getElementById('mgr-pw').value || '');
+    TankerStore.login({ manager: true, password: pw }).then(() => {
+      wrap.remove();
+      onSuccess();
+    }).catch(() => { document.getElementById('mgrErr').innerHTML = '<div class="err">Wrong manager password.</div>'; });
+  };
+  document.getElementById('mgr-go').addEventListener('click', submit);
+  document.getElementById('mgr-pw').addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  document.getElementById('mgr-pw').focus();
+}
+
+// Probe once so isServerMode()/hasToken() are known before we decide on the gate
+// (a 401 here also drops any stale token). Then: online without a valid token →
+// password gate; otherwise load straight through.
+TankerStore.load();
+if (TankerStore.isServerMode() && !TankerStore.hasToken()){
+  showManagerLogin(loadManagerData);
+} else {
+  loadManagerData();
+}
 </script>
 </body>
 </html>

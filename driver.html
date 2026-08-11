@@ -116,6 +116,7 @@
   <main id="screen"><div class="stack"></div></main>
 </div>
 
+<script>window.TANKER_ROLE = 'driver';</script>
 <script src="store.js?v=2"></script>
 <script>
 /* ============================================================================
@@ -170,15 +171,18 @@ function seedDrivers(){
   DRV_ROSTER.forEach(name => { const id = makeDriverId(name, taken); taken.add(id); DB.drivers.push({ id, name, password: makePin(name + '|' + id), phone: '' }); });
   return true;
 }
-if (seedDrivers()) saveDB();
+// Online, the server owns the roster and login; only seed locally in file mode.
+if (!TankerStore.isServerMode()) { if (seedDrivers()) saveDB(); }
 try { const sid = localStorage.getItem(DRV_SESSION); if (sid) currentDriver = (DB.drivers || []).find(d => d.id === sid) || null; } catch {}
+// Scoped server store returns exactly the logged-in driver — recover identity from it.
+if (!currentDriver && TankerStore.isServerMode() && TankerStore.hasToken() && (DB.drivers || []).length === 1) currentDriver = DB.drivers[0];
 
 /* When the manager schedules/updates in another tab or device, pick it up live. */
 TankerStore.onExternalChange(s => {
   DB = s;
   if (!DB.breakdowns) DB.breakdowns = [];
   if (!DB.drivers) DB.drivers = [];
-  if (currentDriver) currentDriver = DB.drivers.find(d => d.id === currentDriver.id) || null;
+  if (currentDriver) currentDriver = DB.drivers.find(d => d.id === currentDriver.id) || currentDriver;
   render();
 });
 
@@ -630,6 +634,19 @@ function wire(t){
 function doLogin(){
   const id = ($('lg-id').value || '').trim().toLowerCase();
   const pw = ($('lg-pw').value || '');
+  if (TankerStore.isServerMode()){
+    // Server verifies the credentials and returns a token; we then reload the
+    // store, which now contains ONLY this driver's own trips.
+    TankerStore.login({ id, password: pw }).then(res => {
+      DB = TankerStore.load() || DB;
+      if (!DB.drivers) DB.drivers = [];
+      currentDriver = (DB.drivers || []).find(d => d.id === res.driver.id) || res.driver;
+      try { localStorage.setItem(DRV_SESSION, currentDriver.id); } catch {}
+      errMsg = ''; currentId = null; render();
+    }).catch(() => setErr('Wrong driver ID or password.'));
+    return;
+  }
+  // Local (no server) dev fallback: check against the local roster.
   const d = (DB.drivers || []).find(x => x.id === id);
   if (!d || String(d.password) !== pw){ setErr('Wrong driver ID or password.'); return; }
   currentDriver = d;
@@ -639,6 +656,10 @@ function doLogin(){
 function doLogout(){
   currentDriver = null; currentId = null; errMsg = '';
   try { localStorage.removeItem(DRV_SESSION); } catch {}
+  if (TankerStore.isServerMode()){
+    TankerStore.logout();
+    DB = { trips: [], fuelLog: [], maintenance: [], breakdowns: [], drivers: [], seqs: DB.seqs };
+  }
   render();
 }
 
