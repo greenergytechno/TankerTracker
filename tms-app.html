@@ -149,7 +149,46 @@
     padding:36px 16px;overflow-y:auto;}
   .modal-wrap.open{display:flex;}
   .modal{background:var(--panel);border:1px solid var(--stroke-2);border-radius:12px;width:100%;max-width:760px;}
+
+  /* Live fleet map */
+  #fleetMap{height:360px;border-radius:10px;overflow:hidden;background:var(--panel-2);}
+  #fleetMap .leaflet-container{background:#0d1512;font-family:var(--f-body);}
+  #fleetMap .leaflet-popup-content-wrapper,#fleetMap .leaflet-popup-tip{background:var(--panel);color:var(--cream);border:1px solid var(--stroke-2);}
+  #fleetMap .leaflet-popup-content{margin:9px 12px;font-size:12px;line-height:1.5;}
+  #fleetMap .leaflet-control-attribution{background:rgba(12,19,16,.7);color:var(--faint);}
+  #fleetMap .leaflet-control-attribution a{color:var(--dim);}
+  .truck-pin{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50% 50% 50% 0;
+    transform:rotate(-45deg);border:2px solid rgba(0,0,0,.35);box-shadow:0 2px 6px rgba(0,0,0,.4);font-size:15px;}
+  .truck-pin span{transform:rotate(45deg);}
+  .truck-pin.live{background:var(--green);}
+  .truck-pin.lost{background:var(--red);}
+  .mapEmpty{height:360px;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--faint);
+    font-size:13px;border:1px dashed var(--stroke-2);border-radius:10px;padding:20px;}
+  .maplegend{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--dim);}
+  .maplegend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:middle;}
+  .truck-pin.idle{background:var(--amber);}
+
+  /* Route progress */
+  .prog{height:6px;border-radius:4px;background:var(--stroke-2);overflow:hidden;margin-top:5px;min-width:90px;}
+  .prog>i{display:block;height:100%;background:var(--green);border-radius:4px;transition:width .6s ease;}
+  .prog.idle>i{background:var(--amber);}
+  .progtxt{font-family:var(--f-mono);font-size:10.5px;color:var(--dim);margin-top:3px;}
+
+  /* Idle / stagnation alerts */
+  .idlerow{border:1px solid rgba(226,71,43,.4);background:rgba(226,71,43,.08);border-radius:10px;
+    padding:12px 14px;margin-bottom:10px;}
+  .idlerow.warn{border-color:rgba(240,169,62,.42);background:rgba(240,169,62,.08);}
+  .idlerow .top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;}
+  .idlerow .dur{font-family:var(--f-mono);font-size:17px;color:var(--red);}
+  .idlerow.warn .dur{color:var(--amber);}
+  .idlegrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:9px;margin-top:9px;}
+  .idlegrid .k{font-size:9.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);}
+  .idlegrid .v{font-size:12px;margin-top:2px;word-break:break-word;}
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
 
@@ -238,6 +277,24 @@
       <div class="card" id="breakdownCard">
         <div class="card-head"><h2>Breakdown Approvals</h2><span class="hint" id="bdHint">roadside repair requests</span></div>
         <div class="card-body" id="breakdownInbox"></div>
+      </div>
+
+      <div class="card" id="idleCard">
+        <div class="card-head"><h2>Unlogged Stop Alerts</h2><span class="hint" id="idleHint">stationary &gt; 14 min with no stop logged</span></div>
+        <div class="card-body" id="idleInbox"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Live Fleet Map</h2><span class="hint" id="mapHint">drivers on active trips</span></div>
+        <div class="card-body">
+          <div id="fleetMap"></div>
+          <div class="maplegend">
+            <span><i style="background:var(--green)"></i>Live — moving</span>
+            <span><i style="background:var(--amber)"></i>Stationary &gt; 14 min (unlogged)</span>
+            <span><i style="background:var(--red)"></i>Signal / consent lost</span>
+            <span>Dashed line = planned route · positions refresh automatically.</span>
+          </div>
+        </div>
       </div>
 
       <div class="card">
@@ -395,7 +452,9 @@
 <div class="modal-wrap" id="modalWrap"><div class="modal" id="modalBody"></div></div>
 
 <script>window.TANKER_ROLE = 'manager';</script>
-<script src="store.js?v=2"></script>
+<!-- Absolute path: the console is served from a nested secret URL
+     (/console/<secret>), so a relative src would resolve to the wrong place. -->
+<script src="/store.js?v=2"></script>
 <script>
 /* ---------------- seed data ----------------
    Placeholder roster — replace with the real 15-vehicle and driver rosters
@@ -779,10 +838,353 @@ function decideBreakdown(id, status){
   renderManager();
 }
 
+/* ---------------- planned route, progress & stagnation ----------------
+   The scheduler only captures route NAMES ("Belagavi" → "Hubballi"), so the
+   console resolves them itself: Nominatim geocodes each name and OSRM returns
+   the driving route between the two points. Both are free, no-key, rate-limited
+   community services, so every answer is cached in localStorage and each
+   from|to pair is resolved once, ever.
+     • progress  = how far along that polyline the truck's live point sits.
+     • stagnation= the driver app anchors where the truck settled
+       (t.stationarySince); anything past IDLE_LIMIT_MIN with no stop logged
+       against it is flagged here. */
+const IDLE_LIMIT_MIN = 14;          // flag threshold the manager asked for
+const STOP_MATCH_TOLERANCE = 15 * 60000;  // a stop logged this far before the
+                                          // anchor still counts as "logged"
+const GEO_CACHE_KEY = 'tankertrack.geocache.v1';
+const ROUTE_CACHE_KEY = 'tankertrack.routecache.v1';
+const RGEO_CACHE_KEY = 'tankertrack.rgeocache.v1';
+const routes = {};                  // "from|to" -> route | 'pending' | 'failed'
+let repaintQueued = false;
+
+function loadCache(k){ try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch { return {}; } }
+function saveCache(k, o){ try { localStorage.setItem(k, JSON.stringify(o)); } catch { /* quota */ } }
+
+function metresBetween(a, b){
+  const R = 6371000, rad = d => d * Math.PI / 180;
+  const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+  const s = Math.sin(dLat / 2) ** 2 +
+            Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
+/* Repaint once, on the next tick, after async lookups land. */
+function queueRepaint(){
+  if (repaintQueued) return;
+  repaintQueued = true;
+  setTimeout(() => { repaintQueued = false; renderManager(); }, 400);
+}
+
+function geocode(place){
+  const key = String(place || '').trim().toLowerCase();
+  if (!key) return Promise.resolve(null);
+  const cache = loadCache(GEO_CACHE_KEY);
+  if (cache[key]) return Promise.resolve(cache[key]);
+  return fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=in&q=' +
+               encodeURIComponent(key), { headers: { Accept: 'application/json' } })
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(j => {
+      if (!j || !j.length) return null;
+      const pt = { lat: parseFloat(j[0].lat), lng: parseFloat(j[0].lon), label: j[0].display_name };
+      const c = loadCache(GEO_CACHE_KEY); c[key] = pt; saveCache(GEO_CACHE_KEY, c);
+      return pt;
+    })
+    .catch(() => null);
+}
+
+/* Human-readable place for a coordinate. Returns '' immediately and fills in on
+   a later repaint — never blocks the alert from rendering. */
+function placeName(lat, lng){
+  const key = lat.toFixed(3) + ',' + lng.toFixed(3);
+  const cache = loadCache(RGEO_CACHE_KEY);
+  if (cache[key] != null) return cache[key];
+  if (placeName._busy && placeName._busy[key]) return '';
+  placeName._busy = placeName._busy || {};
+  placeName._busy[key] = true;
+  fetch('https://nominatim.openstreetmap.org/reverse?format=json&zoom=14&lat=' + lat + '&lon=' + lng,
+        { headers: { Accept: 'application/json' } })
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(j => {
+      const c = loadCache(RGEO_CACHE_KEY);
+      c[key] = (j && j.display_name) ? j.display_name.split(',').slice(0, 3).join(', ') : '';
+      saveCache(RGEO_CACHE_KEY, c);
+      queueRepaint();
+    })
+    .catch(() => {});
+  return '';
+}
+
+/* Turn a stored polyline into one with cumulative distances (for progress). */
+function decorateRoute(stored){
+  const coords = stored.coords, cum = [0];
+  for (let i = 1; i < coords.length; i++){
+    cum[i] = cum[i - 1] + metresBetween(
+      { lat: coords[i-1][0], lng: coords[i-1][1] }, { lat: coords[i][0], lng: coords[i][1] });
+  }
+  return { coords, cum, total: cum[cum.length - 1] || 0, a: stored.a, b: stored.b, straight: !!stored.straight };
+}
+
+function buildRoute(from, to){
+  const ck = (from + '|' + to).toLowerCase();
+  const cache = loadCache(ROUTE_CACHE_KEY);
+  if (cache[ck]) return Promise.resolve(decorateRoute(cache[ck]));
+  return Promise.all([geocode(from), geocode(to)]).then(([a, b]) => {
+    if (!a || !b) return null;
+    const store = obj => { const c = loadCache(ROUTE_CACHE_KEY); c[ck] = obj; saveCache(ROUTE_CACHE_KEY, c); return decorateRoute(obj); };
+    // 'simplified' keeps the cached polyline small enough for localStorage.
+    return fetch('https://router.project-osrm.org/route/v1/driving/' +
+                 a.lng + ',' + a.lat + ';' + b.lng + ',' + b.lat +
+                 '?overview=simplified&geometries=geojson')
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(j => {
+        if (j && j.routes && j.routes.length){
+          return store({ coords: j.routes[0].geometry.coordinates.map(c => [c[1], c[0]]), a, b });
+        }
+        return store({ coords: [[a.lat, a.lng], [b.lat, b.lng]], a, b, straight: true });
+      })
+      // Routing unavailable → straight line between the two towns, clearly marked.
+      .catch(() => store({ coords: [[a.lat, a.lng], [b.lat, b.lng]], a, b, straight: true }));
+  });
+}
+
+/* Synchronous accessor: returns the route if known, else kicks off the lookup. */
+function routeFor(t){
+  const key = String(t.routeFrom + '|' + t.routeTo).toLowerCase();
+  const hit = routes[key];
+  if (hit && hit !== 'pending' && hit !== 'failed') return hit;
+  if (hit) return null;                       // pending or failed
+  routes[key] = 'pending';
+  buildRoute(t.routeFrom, t.routeTo)
+    .then(r => { routes[key] = r || 'failed'; if (r) queueRepaint(); })
+    .catch(() => { routes[key] = 'failed'; });
+  return null;
+}
+
+/* How far along the planned route the truck has travelled.
+   A position is matched to the nearest point on the polyline — but if the truck
+   is further than OFF_ROUTE_LIMIT_M from the whole route, that match is
+   meaningless (a truck 300 km away would otherwise "snap" to the finish and
+   read 100%). Such a fix is reported as off-route instead of as progress. */
+const OFF_ROUTE_LIMIT_M = 25000;      // 25 km — generous for detours/diversions
+
+function routeProgress(route, loc){
+  if (!route || !route.total || !loc || loc.lat == null) return null;
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < route.coords.length; i++){
+    const d = metresBetween({ lat: route.coords[i][0], lng: route.coords[i][1] }, loc);
+    if (d < bestD){ bestD = d; best = i; }
+  }
+  const done = route.cum[best];
+  return {
+    pct: Math.max(0, Math.min(100, (done / route.total) * 100)),
+    doneKm: done / 1000,
+    totalKm: route.total / 1000,
+    remainingKm: Math.max(0, (route.total - done) / 1000),
+    offRouteM: bestD,
+    offRoute: bestD > OFF_ROUTE_LIMIT_M
+  };
+}
+/* Progress caption, or an honest "off route" when the fix can't be matched. */
+function progressText(p){
+  if (!p) return 'resolving route…';
+  if (p.offRoute) return '⚠ off planned route by ' + (p.offRouteM / 1000).toFixed(0) + ' km';
+  return p.pct.toFixed(0) + '% · ' + p.doneKm.toFixed(0) + ' / ' + p.totalKm.toFixed(0) +
+         ' km · ' + p.remainingKm.toFixed(0) + ' km left';
+}
+
+/* A small progress bar + caption for a trip (or '' if the route isn't known). */
+function progressBar(t, idle){
+  const p = routeProgress(routeFor(t), t.lastLocation);
+  if (!p) return '';
+  if (p.offRoute) return '<div class="progtxt" style="color:var(--red)">' + progressText(p) + '</div>';
+  return '<div class="prog' + (idle ? ' idle' : '') + '"><i style="width:' + p.pct.toFixed(1) + '%"></i></div>' +
+    '<div class="progtxt">' + progressText(p) + '</div>';
+}
+
+/* Stationary longer than the limit with no stop logged against it. */
+function idleAlerts(active){
+  const now = Date.now();
+  return active.map(t => {
+    if (!t.stationarySince || !t.lastLocation) return null;
+    const mins = (now - t.stationarySince) / 60000;
+    if (mins < IDLE_LIMIT_MIN) return null;
+    const logged = (t.stops || []).some(s => s.time >= t.stationarySince - STOP_MATCH_TOLERANCE);
+    if (logged) return null;                    // driver declared this stop — not a flag
+    return { t, mins, at: t.stationaryAt || t.lastLocation };
+  }).filter(Boolean).sort((a, b) => b.mins - a.mins);
+}
+const idleTripIds = a => new Set(a.map(x => x.t.id));
+
+function renderIdleAlerts(active){
+  const alerts = idleAlerts(active);
+  const hint = $('idleHint');
+  if (hint) hint.textContent = alerts.length
+    ? alerts.length + ' unlogged stop' + (alerts.length > 1 ? 's' : '')
+    : 'stationary > ' + IDLE_LIMIT_MIN + ' min with no stop logged';
+  $('idleInbox').innerHTML = alerts.length === 0
+    ? '<div class="empty">No unlogged stops. Every stationary truck has a stop logged against it.</div>'
+    : alerts.map(a => {
+        const t = a.t, at = a.at;
+        const where = placeName(at.lat, at.lng);
+        const p = routeProgress(routeFor(t), t.lastLocation);
+        return '<div class="idlerow' + (a.mins < 30 ? ' warn' : '') + '">' +
+          '<div class="top"><b>' + esc(t.driver) + ' · ' + esc(t.vehicle) + '</b>' +
+            '<span class="dur">stopped ' + fmtDur(a.mins) + '</span></div>' +
+          '<div class="idlegrid">' +
+            '<div><div class="k">Trip</div><div class="v">' + esc(t.id) + '</div></div>' +
+            '<div><div class="k">Route</div><div class="v">' + esc(t.routeFrom) + ' → ' + esc(t.routeTo) + '</div></div>' +
+            '<div><div class="k">Stopped since</div><div class="v">' + fmtTime(t.stationarySince) + '</div></div>' +
+            '<div><div class="k">Location</div><div class="v">' + (where ? esc(where) + '<br>' : '') +
+              locText(at) + '</div></div>' +
+            '<div><div class="k">Shipment</div><div class="v">' + t.loadKL.toFixed(1) + ' KL ethanol</div></div>' +
+            '<div><div class="k">Invoice</div><div class="v">' + esc(t.invoiceNo || '—') + '</div></div>' +
+            '<div><div class="k">Deadline</div><div class="v">' + fmtTime(t.deadline) + '</div></div>' +
+            '<div><div class="k">Route progress</div><div class="v">' +
+              progressText(p) + '</div></div>' +
+            '<div><div class="k">Stops logged</div><div class="v">' + (t.stops || []).length + ' / ' + t.maxStops + '</div></div>' +
+            '<div><div class="k">Driver phone</div><div class="v">' + esc(t.driverPhone || '—') + '</div></div>' +
+          '</div></div>';
+      }).join('');
+}
+
+/* ---------------- live fleet map ----------------
+   A Leaflet map of every driver on an active trip, placed from the last-known
+   GPS point the driver app streams onto the trip (t.lastLocation). Green = still
+   sharing; red = signal/consent lost mid-trip. Built lazily and updated in place
+   on every renderManager() (which runs on each 2.5s poll), so trucks move without
+   a full re-init. Degrades to a coordinate list if Leaflet's CDN didn't load. */
+let fleetMap = null, fleetMarkers = {}, routeLayers = {}, fleetFitted = '';
+
+function truckIcon(state){
+  return L.divIcon({
+    className: '', iconSize: [34, 34], iconAnchor: [17, 34], popupAnchor: [0, -32],
+    html: '<div class="truck-pin ' + state + '"><span>🚛</span></div>'
+  });
+}
+
+/* Draw (or refresh) one trip's planned route: the full route dashed, plus the
+   covered portion drawn solid on top so progress is visible at a glance. */
+function drawRoute(t, route, prog){
+  const prev = routeLayers[t.id];
+  if (prev) prev.forEach(l => fleetMap.removeLayer(l));
+  const layers = [];
+  layers.push(L.polyline(route.coords, {
+    color: '#9BAAA2', weight: 3, opacity: .55, dashArray: '6 7'
+  }).addTo(fleetMap).bindPopup(esc(t.routeFrom) + ' → ' + esc(t.routeTo) +
+    (route.straight ? '<br><i>direct line — road route unavailable</i>' : '')));
+  if (prog && prog.pct > 0){
+    let idx = 0;
+    while (idx < route.cum.length - 1 && route.cum[idx] < (prog.doneKm * 1000)) idx++;
+    if (idx > 0){
+      layers.push(L.polyline(route.coords.slice(0, idx + 1), {
+        color: '#5FD37B', weight: 4, opacity: .9
+      }).addTo(fleetMap));
+    }
+  }
+  // Origin / destination dots.
+  [[route.coords[0], 'Origin — ' + esc(t.routeFrom)],
+   [route.coords[route.coords.length - 1], 'Destination — ' + esc(t.routeTo)]].forEach(([ll, label]) => {
+    layers.push(L.circleMarker(ll, { radius: 5, color: '#F0A93E', fillColor: '#F0A93E', fillOpacity: .9, weight: 2 })
+      .addTo(fleetMap).bindPopup(label));
+  });
+  routeLayers[t.id] = layers;
+}
+
+function renderFleetMap(active){
+  const host = $('fleetMap');
+  if (!host) return;
+  const located = active.filter(t => t.lastLocation && t.lastLocation.lat != null);
+  const idle = idleTripIds(idleAlerts(active));
+  const hint = $('mapHint');
+  if (hint) hint.textContent = located.length + ' live · ' + active.length + ' active' +
+    (idle.size ? ' · ' + idle.size + ' stopped' : '');
+
+  // Leaflet unavailable (offline / CDN blocked) → fall back to a list.
+  if (typeof L === 'undefined'){
+    host.classList.add('mapEmpty');
+    host.innerHTML = located.length
+      ? located.map(t => '📍 <b>' + esc(t.driver) + '</b> (' + esc(t.id) + ') — ' + locText(t.lastLocation)).join('<br>')
+      : 'No drivers are sharing a live location right now.';
+    return;
+  }
+
+  if (!located.length && !fleetMap){
+    host.classList.add('mapEmpty');
+    host.innerHTML = 'No active trips are sharing a live location yet. A truck appears here the moment a driver starts a tracked trip.';
+    return;
+  }
+  host.classList.remove('mapEmpty');
+
+  if (!fleetMap){
+    host.innerHTML = '';
+    fleetMap = L.map(host, { zoomControl: true, attributionControl: true }).setView([15.85, 74.5], 7); // Belagavi region
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '© OpenStreetMap'
+    }).addTo(fleetMap);
+    setTimeout(() => fleetMap && fleetMap.invalidateSize(), 60);
+  }
+
+  const liveIds = new Set();
+  const framePoints = [];
+  located.forEach(t => {
+    liveIds.add(t.id);
+    const ll = [t.lastLocation.lat, t.lastLocation.lng];
+    framePoints.push(ll);
+
+    // Planned route + how much of it is done.
+    const route = routeFor(t);                       // null while it resolves
+    const prog = routeProgress(route, t.lastLocation);
+    // Don't paint a "covered" stretch from a fix that isn't on the route.
+    if (route) { drawRoute(t, route, prog && !prog.offRoute ? prog : null);
+                 framePoints.push(route.coords[0], route.coords[route.coords.length - 1]); }
+
+    const lost = !!t.trackingLost;
+    const isIdle = idle.has(t.id);
+    const state = lost ? 'lost' : (isIdle ? 'idle' : 'live');
+    const status = lost ? '<span style="color:var(--red)">⚠ signal / consent lost</span>'
+      : isIdle ? '<span style="color:var(--amber)">⏸ stopped ' + fmtDur((Date.now() - t.stationarySince) / 60000) + ' — no stop logged</span>'
+      : '<span style="color:var(--green)">● moving</span>';
+    const popup = '<b>' + esc(t.driver) + '</b><br>' + esc(t.id) + ' · ' + esc(t.vehicle) +
+      '<br>' + esc(t.routeFrom) + ' → ' + esc(t.routeTo) +
+      '<br>' + status + ' · updated ' + fmtClock(t.lastLocation.at) +
+      '<br>' + (prog && !prog.offRoute ? '<b>' + prog.pct.toFixed(0) + '% of route</b> · ' +
+                 prog.doneKm.toFixed(0) + '/' + prog.totalKm.toFixed(0) + ' km · ' +
+                 prog.remainingKm.toFixed(0) + ' km left'
+               : '<span style="color:var(--red)">' + progressText(prog) + '</span>') +
+      '<br>' + t.loadKL.toFixed(1) + ' KL · inv ' + esc(t.invoiceNo || '—');
+
+    let m = fleetMarkers[t.id];
+    if (m){
+      m.setLatLng(ll); m.setIcon(truckIcon(state)); m.getPopup().setContent(popup);
+    } else {
+      m = L.marker(ll, { icon: truckIcon(state) }).addTo(fleetMap).bindPopup(popup);
+      fleetMarkers[t.id] = m;
+    }
+  });
+
+  // Drop markers/routes for trips that ended or stopped reporting.
+  Object.keys(fleetMarkers).forEach(id => {
+    if (!liveIds.has(id)){ fleetMap.removeLayer(fleetMarkers[id]); delete fleetMarkers[id]; }
+  });
+  Object.keys(routeLayers).forEach(id => {
+    if (!liveIds.has(id)){ routeLayers[id].forEach(l => fleetMap.removeLayer(l)); delete routeLayers[id]; }
+  });
+
+  // Re-frame when the set of trucks/routes changes (a route resolves a moment
+  // after the truck appears) — but not on every position tick, which would
+  // fight the manager panning the map.
+  const sig = [...liveIds].sort().join(',') + '|' + Object.keys(routeLayers).sort().join(',');
+  if (framePoints.length && sig !== fleetFitted){
+    fleetMap.fitBounds(L.latLngBounds(framePoints).pad(0.15));
+    fleetFitted = sig;
+  }
+}
+
 function renderManager(){
   const all = [...trips.values()];
 
   const active = all.filter(t => t.status === 'active');
+  const idleIds = idleTripIds(idleAlerts(active));
   const flagged = all.reduce((n, t) => n + classifyStops(t).filter(s => s.unauthorized).length, 0);
   const dispatched = all.filter(t => t.status !== 'scheduled').reduce((n, t) => n + t.loadKL, 0);
   const late = all.filter(t => t.status === 'completed' && t.arrival.time > t.deadline).length;
@@ -793,6 +1195,7 @@ function renderManager(){
     ['Completed', all.filter(t => t.status === 'completed').length, ''],
     ['Ethanol Dispatched', dispatched.toFixed(1) + ' KL', 'a'],
     ['Unauthorized Stops', flagged, flagged ? 'r' : 'g'],
+    ['Unlogged Idle', idleIds.size, idleIds.size ? 'r' : 'g'],
     ['Late Arrivals', late, late ? 'r' : 'g'],
     ['Pending Approvals', breakdowns.filter(b => b.status === 'pending').length,
       breakdowns.some(b => b.status === 'pending') ? 'r' : 'g'],
@@ -804,11 +1207,13 @@ function renderManager(){
   ).join('');
 
   renderBreakdowns();
+  renderIdleAlerts(active);
+  renderFleetMap(active);
 
   const board = all.slice().sort((a, b) => b.createdAt - a.createdAt);
   $('tripBoard').innerHTML = board.length === 0
     ? '<div class="empty">No trips yet — schedule one to begin.</div>'
-    : '<table><thead><tr><th>Trip ID</th><th>Vehicle</th><th>Driver</th><th>Route</th><th>Stops</th><th>Status</th></tr></thead><tbody>' +
+    : '<table><thead><tr><th>Trip ID</th><th>Vehicle</th><th>Driver</th><th>Route</th><th>Progress</th><th>Stops</th><th>Status</th></tr></thead><tbody>' +
       board.map(t => {
         const stops = classifyStops(t);
         const bad = stops.filter(s => s.unauthorized).length;
@@ -817,8 +1222,14 @@ function renderManager(){
         const loc = (t.status === 'active' && t.lastLocation)
           ? '<div class="note" style="margin-top:3px">' + locText(t.lastLocation) +
             ' <span style="color:var(--faint)">' + fmtClock(t.lastLocation.at) + '</span></div>' : '';
+        const isIdle = idleIds.has(t.id);
+        const progCell = t.status === 'active'
+          ? (progressBar(t, isIdle) || '<span class="note">resolving route…</span>') +
+            (isIdle ? '<div class="note" style="color:var(--amber)">⏸ stopped ' +
+                      fmtDur((Date.now() - t.stationarySince) / 60000) + '</div>' : '')
+          : (t.status === 'completed' ? '<span class="pill p-green">100%</span>' : '—');
         return '<tr><td class="strong">' + esc(t.id) + '</td><td>' + esc(t.vehicle) + '</td><td>' + esc(t.driver) +
-          '</td><td>' + esc(t.routeFrom) + ' → ' + esc(t.routeTo) + loc + '</td><td>' + stopCell +
+          '</td><td>' + esc(t.routeFrom) + ' → ' + esc(t.routeTo) + loc + '</td><td>' + progCell + '</td><td>' + stopCell +
           '</td><td>' + statusPill(t.status) + '</td></tr>';
       }).join('') + '</tbody></table>';
 
@@ -1996,6 +2407,8 @@ $('fu-kind').addEventListener('change', syncFuelKind);
 
 /* Load the store and paint the console. Runs only once the manager is
    authenticated (or immediately in local file mode). */
+let managerReady = false;
+
 function loadManagerData(){
   const savedState = TankerStore.load();
   if (savedState) hydrate(savedState);
@@ -2009,7 +2422,12 @@ function loadManagerData(){
   renderFuel();
   renderManager();
   renderDrivers();
+  managerReady = true;
 }
+
+/* Stop durations must keep counting up even when no new data arrives (e.g. the
+   driver's phone went quiet), so the console re-paints on its own clock too. */
+setInterval(() => { if (managerReady) renderManager(); }, 30000);
 
 /* When the driver app writes on another device, refresh the manager live. */
 TankerStore.onExternalChange(s => {
@@ -2019,7 +2437,7 @@ TankerStore.onExternalChange(s => {
 });
 
 /* Manager auth gate. Online, the console is password-protected — a driver who
-   changes their URL to /tms-app.html lands here and, without the password, gets
+   guesses the console's secret path lands here and, without the password, gets
    no data at all. In local file mode (no server) it opens directly for dev. */
 function showManagerLogin(onSuccess){
   const wrap = document.createElement('div');

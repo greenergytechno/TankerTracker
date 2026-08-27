@@ -188,8 +188,12 @@ TankerStore.onExternalChange(s => {
 
 /* ---------------- location tracking ----------------
    The app asks the device for the driver's position (browser Geolocation).
-   While a trip is active it watches the position and writes the last-known
-   point onto the trip, throttled, so the manager board can see the truck. */
+   A trip CANNOT be started until the driver grants live-location permission
+   (see requestLocationConsent / doDepart). While a trip is active the app
+   watches the position continuously and writes the last-known point onto the
+   trip, throttled, so the manager's live map can see the truck. If permission
+   is revoked or GPS drops out mid-trip, the trip is flagged trackingLost so the
+   manager map shows the truck as "signal lost". */
 let geo = { lat: null, lng: null, at: null, status: 'off' }; // off|on|denied|unsupported
 let watchId = null;
 let lastGeoSave = 0;
@@ -211,29 +215,137 @@ function updateLocPill(){
   }
 }
 
+let hbTimer = null;   // heartbeat: periodic getCurrentPosition so positions keep flowing
+
+/* Stationary detection. We keep an in-memory "anchor" — the spot the truck has
+   been sitting at. The anchor only moves once the truck travels further than
+   MOVE_THRESHOLD_M from it, so anchor.since is the moment it effectively
+   stopped. It rides along with the throttled position write; the manager
+   console flags any stationary spell over 14 minutes with no stop logged
+   against it. Anchoring in memory (not on every save) keeps a moving truck
+   from writing to the store every few seconds. */
+const MOVE_THRESHOLD_M = 120;
+let stationaryAnchor = null;
+
+function metresBetween(a, b){
+  const R = 6371000, rad = d => d * Math.PI / 180;
+  const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+  const s = Math.sin(dLat / 2) ** 2 +
+            Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
 function onPosition(pos){
   geo = { lat: pos.coords.latitude, lng: pos.coords.longitude, at: Date.now(), status: 'on' };
   updateLocPill();
+
+  // Has the truck actually moved away from where it was parked?
+  if (!stationaryAnchor || metresBetween(stationaryAnchor, geo) > MOVE_THRESHOLD_M){
+    stationaryAnchor = { lat: geo.lat, lng: geo.lng, since: geo.at };
+  }
+
   // Stamp the active trip's last-known position, at most once every 15s.
   const t = trip();
-  if (t && t.status === 'active' && Date.now() - lastGeoSave > 15000){
-    t.lastLocation = { lat: geo.lat, lng: geo.lng, at: geo.at };
-    lastGeoSave = Date.now();
-    saveDB();
+  if (t && t.status === 'active'){
+    let dirty = false;
+    if (t.trackingLost){ t.trackingLost = false; dirty = true; }   // signal recovered
+    if (Date.now() - lastGeoSave > 15000){
+      t.lastLocation = { lat: geo.lat, lng: geo.lng, at: geo.at };
+      t.stationarySince = stationaryAnchor.since;
+      t.stationaryAt = { lat: stationaryAnchor.lat, lng: stationaryAnchor.lng };
+      lastGeoSave = Date.now();
+      dirty = true;
+    }
+    if (dirty) saveDB();
   }
 }
 function onGeoError(err){
-  geo.status = (err && err.code === 1) ? 'denied' : 'off';
+  // A transient timeout / temporary "position unavailable" is NOT a denial — keep
+  // the last good status so a single dropped fix doesn't blank the pill. Only a
+  // real permission block (code 1) flips us to "denied".
+  if (err && err.code === 1){
+    geo.status = 'denied';
+    // If consent is pulled mid-trip, tell the manager's live map.
+    const t = trip();
+    if (t && t.status === 'active' && !t.trackingLost){ t.trackingLost = true; saveDB(); }
+    if (t && t.status === 'active'){
+      setErr('Location sharing was turned off. Turn it back on — the trip must be tracked until you arrive.');
+    }
+  } else if (geo.status !== 'on'){
+    geo.status = 'off';   // never had a fix yet and this one failed
+  }
   updateLocPill();
 }
 
-function enableLocation(){
-  if (!('geolocation' in navigator)){ geo.status = 'unsupported'; updateLocPill(); return; }
-  navigator.geolocation.getCurrentPosition(onPosition, onGeoError, { enableHighAccuracy: true, timeout: 10000 });
+/* One geolocation read wrapped as a promise. */
+function getFix(opts){
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, opts);
+  });
+}
+
+/* Acquire a position robustly: try a high-accuracy fix first, but if the device
+   can't lock one quickly (indoors, no GPS chip, laptop) fall back to a coarser,
+   possibly-cached network fix instead of failing. Rejects ONLY on a real
+   permission denial or when every strategy fails. */
+function acquireLocation(){
+  return getFix({ enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 })
+    .catch(err => {
+      if (err && err.code === 1) throw err;                 // denied → give up, surface it
+      // Timeout / unavailable → retry coarse, longer, accept an older cached fix.
+      return getFix({ enableHighAccuracy: false, timeout: 20000, maximumAge: 120000 });
+    });
+}
+
+/* Start the continuous position watch (used once a trip is active). Coarse
+   accuracy is fine for a fleet map and far more reliable than high accuracy; a
+   heartbeat getCurrentPosition backs it up in case watchPosition stalls. */
+function startWatch(){
+  if (!('geolocation' in navigator)) return;
   if (watchId == null){
     watchId = navigator.geolocation.watchPosition(onPosition, onGeoError,
-      { enableHighAccuracy: true, maximumAge: 10000 });
+      { enableHighAccuracy: true, timeout: 25000, maximumAge: 15000 });
   }
+  if (hbTimer == null){
+    hbTimer = setInterval(() => {
+      navigator.geolocation.getCurrentPosition(onPosition, onGeoError,
+        { enableHighAccuracy: false, timeout: 20000, maximumAge: 20000 });
+    }, 20000);
+  }
+}
+
+/* Stop all location work — called when the trip ends or the driver signs out. */
+function stopTracking(){
+  if (watchId != null){ try { navigator.geolocation.clearWatch(watchId); } catch {} watchId = null; }
+  if (hbTimer != null){ clearInterval(hbTimer); hbTimer = null; }
+}
+
+/* Fire a one-off permission request (the pill at the top). */
+function enableLocation(){
+  if (!('geolocation' in navigator)){ geo.status = 'unsupported'; updateLocPill(); return; }
+  const el = $('locpill'); if (el && geo.status !== 'on') el.textContent = '📍 locating…';
+  acquireLocation().then(onPosition).catch(onGeoError);
+  startWatch();
+}
+
+/* Mandatory consent gate for starting a trip. Resolves once the device returns a
+   usable fix (high-accuracy OR coarse fallback); rejects with a driver-facing
+   reason only if the permission is blocked or no fix can be had at all. On
+   success it leaves the continuous watch running for the whole trip. */
+function requestLocationConsent(){
+  if (!('geolocation' in navigator)){
+    geo.status = 'unsupported'; updateLocPill();
+    return Promise.reject('This device has no GPS/location capability, so the trip cannot be tracked. Start the trip from a phone that can share its live location.');
+  }
+  return acquireLocation().then(pos => {
+    onPosition(pos); startWatch(); return pos;
+  }).catch(err => {
+    onGeoError(err);
+    if (err && err.code === 1){
+      throw 'Live-location permission was denied. Tap “Allow” on the location prompt (or enable Location for this site in your browser settings), then try again — the trip cannot start without it.';
+    }
+    throw 'Could not get a location fix yet (' + ((err && err.message) || 'no signal') + '). Make sure Location/GPS is turned on for your phone, move near a window or outside, and try again.';
+  });
 }
 
 /* ---------------- helpers ---------------- */
@@ -304,6 +416,13 @@ function setErr(m){ errMsg = m || ''; render(); }
 /* ---------------- render ---------------- */
 function render(){
   const t = trip();
+  // An active trip must keep streaming location even after a reload/reconnect.
+  if (t && t.status === 'active'){
+    startWatch();
+    if (geo.status !== 'on' && ('geolocation' in navigator)){
+      navigator.geolocation.getCurrentPosition(onPosition, onGeoError, { enableHighAccuracy: true, timeout: 10000 });
+    }
+  }
   let html;
   if (!currentDriver) html = loginScreen();
   else if (!t) html = homeScreen();
@@ -447,7 +566,7 @@ function departScreen(t){
   return tripHeader(t) +
     '<div class="card"><div class="card-body">' +
       '<h2>Start Trip</h2><div class="sub">confirm departure</div>' +
-      '<div style="margin-top:14px">' + lateBanner + errBlock() +
+      '<div style="margin-top:14px">' + lateBanner + errBlock() + '<div id="depErr"></div>' +
         '<div class="row2">' +
           '<div class="field"><label>Departure Weight (kg)</label><input id="d-weight" type="number" inputmode="numeric" value="14360"></div>' +
           '<div class="field"><label>Time</label><input id="d-time" type="datetime-local" value="' + localNowValue() + '"></div>' +
@@ -457,6 +576,9 @@ function departScreen(t){
         (last
           ? '<p class="note">Last recorded for ' + esc(t.vehicle) + ': <b>' + kmv(last.km) + ' km</b> (' + esc(last.src) + ').</p>'
           : '<p class="note">No previous reading on file for ' + esc(t.vehicle) + '.</p>') +
+        '<div class="err" style="background:rgba(95,211,123,.1);border-color:rgba(95,211,123,.35);color:#bfe9cb">' +
+          '📍 <b>Live location required.</b> When you tap start, your device will ask to share your location — you must choose <b>Allow</b>. ' +
+          'Your position is shared with dispatch for the whole trip, until you mark arrival.</div>' +
         '<button class="act" id="btn-depart">Start Trip</button>' +
       '</div>' +
     '</div></div>';
@@ -654,6 +776,7 @@ function doLogin(){
   errMsg = ''; currentId = null; render();
 }
 function doLogout(){
+  stopTracking();
   currentDriver = null; currentId = null; errMsg = '';
   try { localStorage.removeItem(DRV_SESSION); } catch {}
   if (TankerStore.isServerMode()){
@@ -674,11 +797,28 @@ function doDepart(t){
   const last = lastKnownOdometer(t.vehicle);
   if (last && odo < last.km) return setErr('Opening odometer ' + kmv(odo) + ' km is below the last recorded ' + kmv(last.km) + ' km for ' + t.vehicle + '.');
 
-  t.departure = { weight: w, time: new Date(time).getTime() };
-  t.openingOdometer = odo;
-  t.status = 'active';
-  enableLocation();          // begin sharing position for the live board
-  errMsg = ''; saveDB(); render();
+  /* MANDATORY: the trip cannot begin until the driver grants live-location
+     access and the device returns a real fix. Everything above is validated
+     first so we only prompt for location once the entry is otherwise complete. */
+  const btn = $('btn-depart');
+  if (btn){ btn.disabled = true; btn.textContent = 'Getting your location…'; }
+  errMsg = ''; if ($('depErr')) $('depErr').innerHTML = '';
+  const depErr = m => { const e = $('depErr'); if (e) e.innerHTML = '<div class="err">' + esc(m) + '</div>'; else setErr(m);
+                        const b = $('btn-depart'); if (b){ b.disabled = false; b.textContent = 'Start Trip'; } };
+
+  requestLocationConsent().then(() => {
+    t.departure = { weight: w, time: new Date(time).getTime() };
+    t.openingOdometer = odo;
+    t.status = 'active';
+    t.locationConsent = { grantedAt: Date.now() };   // recorded proof of consent
+    t.trackingLost = false;
+    t.lastLocation = { lat: geo.lat, lng: geo.lng, at: geo.at };
+    stationaryAnchor = { lat: geo.lat, lng: geo.lng, since: geo.at };
+    t.stationarySince = stationaryAnchor.since;
+    t.stationaryAt = { lat: geo.lat, lng: geo.lng };
+    lastGeoSave = Date.now();
+    errMsg = ''; saveDB(); render();
+  }).catch(depErr);
 }
 
 function doReportBreakdown(t){
@@ -762,6 +902,7 @@ function doArrive(t){
   t.arrival = { weight: w, time: ts };
   t.closingOdometer = odo;
   t.dieselLitres = diesel;
+  stopTracking();            // trip over — stop watching the driver's location
   t.grnName = grnFile.name;
   t.grnUrl = URL.createObjectURL(grnFile);
   t.status = 'completed';

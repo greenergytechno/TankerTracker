@@ -57,8 +57,13 @@ DRIVERS = ['R. Naik', 'M. Iqbal', 'S. Reddy', 'P. Kumar', 'A. Shetty',
 
 # Only these paths are served as static files — source, .git and docs are NOT
 # exposed on the network.
+#
+# NOTE: '/tms-app.html' is deliberately ABSENT. The manager console is not served
+# at a guessable path at all; it lives only at /console/<secret> (see
+# console_path()). Handing a driver the public URL therefore cannot expose the
+# manager console — there is no manager page on the public paths to find.
 STATIC_ALLOW = {
-    '/index.html', '/driver.html', '/tms-app.html', '/store.js',
+    '/index.html', '/driver.html', '/store.js',
     '/manifest.webmanifest', '/icon.svg', '/favicon.ico',
 }
 
@@ -130,17 +135,42 @@ def _sha(pw):
 def ensure_manager_password():
     """Return the plaintext ONLY when a new password is generated (so it can be
     printed once); otherwise None. MANAGER_PASSWORD env overrides."""
+    auth = {}
     try:
         with open(AUTH_FILE, encoding='utf-8') as f:
             auth = json.load(f)
-        if auth.get('manager'):
+        if auth.get('manager') and not os.environ.get('MANAGER_PASSWORD'):
             return None
     except Exception:
         pass
     pw = os.environ.get('MANAGER_PASSWORD') or secrets.token_urlsafe(6)
+    auth['manager'] = _sha(pw)          # merge — never clobber the console secret
     with open(AUTH_FILE, 'w', encoding='utf-8') as f:
-        json.dump({'manager': _sha(pw)}, f)
+        json.dump(auth, f)
     return pw
+
+
+def console_path():
+    """The secret URL segment the manager console is served at, e.g.
+    /console/8fkQ2r… — persisted in auth.json so it survives restarts.
+    MANAGER_PATH env overrides it. This is the FIRST of two locks: an outsider
+    who only has the public (driver) URL cannot even find the console, and even
+    with the URL they still face the manager password."""
+    try:
+        with open(AUTH_FILE, encoding='utf-8') as f:
+            auth = json.load(f)
+    except Exception:
+        auth = {}
+    if os.environ.get('MANAGER_PATH'):
+        seg = os.environ['MANAGER_PATH'].strip('/')
+    elif auth.get('console'):
+        return auth['console']
+    else:
+        seg = secrets.token_urlsafe(12)
+    auth['console'] = seg
+    with open(AUTH_FILE, 'w', encoding='utf-8') as f:
+        json.dump(auth, f)
+    return seg
 
 
 def manager_password_ok(pw):
@@ -278,6 +308,14 @@ class Handler(SimpleHTTPRequestHandler):
             if not self._principal():
                 return self._json({'error': 'auth required'}, 401)
             return self._json({'rev': read_store().get('rev', 0)})
+        # The manager console — served ONLY at its secret path. Compared in
+        # constant time so the secret can't be recovered by timing the 404.
+        if path.startswith('/console/'):
+            seg = path[len('/console/'):].rstrip('/')
+            if secrets.compare_digest(seg, CONSOLE_SEG):
+                self.path = '/tms-app.html'
+                return super().do_GET()
+            return self.send_error(404)
         if path == '/':
             self.path = '/index.html'
             return super().do_GET()
@@ -331,19 +369,26 @@ class Handler(SimpleHTTPRequestHandler):
         pass  # quiet
 
 
+CONSOLE_SEG = ''   # set at startup from console_path()
+
 if __name__ == '__main__':
     seed_drivers_if_missing()
     newpw = ensure_manager_password()
+    CONSOLE_SEG = console_path()
     port = int(os.environ.get('PORT', '8000'))
     httpd = ThreadingHTTPServer(('0.0.0.0', port), Handler)
     print(f'TankerTrack server running on http://0.0.0.0:{port}')
     print(f'  data stored at: {DATA_FILE}')
+    print('  ' + '=' * 60)
+    print(f'  DRIVER  (public, hand this out):  /            → driver.html')
+    print(f'  MANAGER (keep secret):            /console/{CONSOLE_SEG}')
     if newpw:
-        print('  ' + '=' * 52)
-        print(f'  MANAGER PASSWORD (save this — shown once): {newpw}')
-        print('  ' + '=' * 52)
+        print(f'  MANAGER PASSWORD (shown once):    {newpw}')
     else:
-        print('  manager password: already set (delete data/auth.json to reset)')
+        print('  MANAGER PASSWORD:                 already set')
+    print('  ' + '=' * 60)
+    print('  The manager console exists ONLY at that secret path; /tms-app.html'
+          ' now 404s, so the public URL cannot reach it.')
     print('  press Ctrl+C to stop', flush=True)
     try:
         httpd.serve_forever()
